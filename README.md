@@ -95,9 +95,9 @@ And again you'd need to tell what the previous code actually does.
 ## Features
 
 List three core features, no more, no less:
-1. Dynamic range visualization with traffic light colors
-2. Frequency spectrum analysis with color indicators for different bands
-3. Selection of industry standard dynamic range presets
+1. Dynamic range visualisation with traffic light colours
+2. Algorithm for detecting dynamics vs perceived dynamics of audio signal
+3. Warning indicator of moving from loud to 'perceptively loud', e.g. when too much reduction in transients is occurring.
 
 ## Configuration
 
