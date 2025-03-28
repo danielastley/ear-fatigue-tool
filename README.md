@@ -4,8 +4,9 @@
 > ear-fatigue-tool
 
 # Idea Concept:
-An audio visualization app that help producers maintain appropriate audio levels in their mixing 
-as they go along, and enourage them to adjust their playback device volume levels accordingly
+An audio visualisation app that helps producers maintain appropriate audio levels in their mixing 
+as they go along to protect dynamics, and encourage them to adjust their playback device volume 
+level accordingly instead of entering 'perceived loudness' at the mixing stage.
 
 # MVP:
 A simple resizable floating window that changes colour, based on actual dynamics of master audio channel
