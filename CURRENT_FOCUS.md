@@ -9,8 +9,14 @@ I also provided Gemini with a visual mock-up of what the MVP app would look like
 # Current File and Folder Structure:
 To start the coding process, I provided Gemini the current files/folder structure that has already been created and current. I provided the starting code that Projucer provides to help start projects within JUCE.
 
+# PHASE 2 - Foundational Learning & Basic Prototype Setup (Aligns with Learning Schedule "Learn First" & "JUCE Project Setup")
+
 # Loading it as a Plugin:
 One question was about how to test the 'empty' app within a DAW to verify it was working. Although it may not be so important in this initial stage, I would like to see the process of getting a working plugin after building it within the IDE. This would give me a greater oversight and understanding of how to quickly get the app into the DAW for testing later on. I asked Gemini to give me the steps to loading the plugin into a DAW on macOS.
 
 # Issue - Incorrect initial Projucer Project setup:
-From the current file and code I gave Gemini, it looks I have set up the project with the wrong starting files, creating a GUI project, instead of an Audio Plugin, and so the template files are not Audio Plugin ready files. I worked with Gemini to fix this issue. 
+From the current file and code I gave Gemini, it looks I have set up the project with the wrong starting files, creating a GUI project, instead of an Audio Plugin, and so the template files are not Audio Plugin ready files. I worked with Gemini to fix this issue. Then I successfully loaded corrent plugin in Logic, and confirmed Audio Pass-through
+
+# Issue - Finding a constructor in C++ JUCE Project:
+I don't know what a constructor is, so needed to complete a tutorial, please find in the tutorials folder.
+

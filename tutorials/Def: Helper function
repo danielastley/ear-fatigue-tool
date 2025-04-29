@@ -1,0 +1,22 @@
+A helper function in C++ is a utility function designed to assist other functions or classes by encapsulating reusable logic or simplifying complex tasks. While not formally defined in the C++ standard, the term generally refers to functions that:
+
+1. Assist in Code Organization
+Reduce repetition: Helper functions consolidate repeated logic (e.g., input validation, calculations) into a single reusable unit.
+Example: A payroll function might delegate wage calculations to a helper like pay(overtime, rate) to avoid redundancy.
+
+Improve readability: By breaking down tasks into named, focused functions (e.g., s2ws() for string conversion), code becomes self-documenting.
+
+2. Relationship to Classes
+Class helpers: Often placed in the same namespace as a class to support its interface without requiring direct access to private members.
+Example: A validateAge() function that uses a Person class's public methods to check age validity.
+
+Private helpers: Functions declared within a class (often private) to modularize internal logic without exposing implementation details.
+Example: A computeHash() method used internally by a class's public API.
+
+3. Usage Patterns
+Standalone utilities: Generic functions like std::advance() (from <iterator>) assist multiple iterators without belonging to a specific class.
+
+Namespace organization: Grouping helpers in namespaces (e.g., StringUtils::toLower()) clarifies their purpose and enables argument-dependent lookup.
+
+Key Distinction
+Unlike class member functions, helpers typically rely on explicit parameters rather than direct access to class internals. They avoid bloating classes with non-essential methods, adhering to principles like those in the CppCoreGuidelines.
