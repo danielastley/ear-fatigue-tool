@@ -1,2 +1,5 @@
 **/Builds
 **/JuceLibraryCode
+
+#Mac OS DS_Store ignore
+.DS_Store
