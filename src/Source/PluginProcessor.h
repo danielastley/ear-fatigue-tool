@@ -31,6 +31,10 @@ public:
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     //==============================================================================
+    
+    juce::AudioProcessorValueTreeState apvts;
+    
+    
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
 
@@ -56,7 +60,8 @@ public:
 private:
     //==============================================================================
     
-    juce::AudioParameterBool* bypassParameter; // Our own private member variable to hold our bypass parameter
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    
                              
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EarfatiguetoolAudioProcessor)
 };
