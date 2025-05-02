@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="tvjX69" name="ear-fatigue-tool" projectType="audioplug" useAppConfig="0"
+<JUCERPROJECT id="LjgHbi" name="ear-fatigue-tool" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
-  <MAINGROUP id="M88KV0" name="ear-fatigue-tool">
-    <GROUP id="{58B5104C-0BD8-2CD4-AA9A-F5F360A2951B}" name="Source">
-      <FILE id="aSzjGR" name="PluginProcessor.cpp" compile="1" resource="0"
+  <MAINGROUP id="wAiH1a" name="ear-fatigue-tool">
+    <GROUP id="{5FC16A63-7B0D-22EC-F16C-3E7148433ED8}" name="Source">
+      <FILE id="EDJdLv" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
-      <FILE id="OryOIO" name="PluginProcessor.h" compile="0" resource="0"
+      <FILE id="aOeo3P" name="PluginProcessor.h" compile="0" resource="0"
             file="Source/PluginProcessor.h"/>
-      <FILE id="cXGXQE" name="PluginEditor.cpp" compile="1" resource="0"
+      <FILE id="srCjz4" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
-      <FILE id="imHSvs" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="I4tTMT" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>

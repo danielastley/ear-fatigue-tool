@@ -10,25 +10,8 @@
 #include "PluginEditor.h"
 
 //==============================================================================
-
-juce::AudioProcessorValueTreeState::ParameterLayout EarfatiguetoolAudioProcessor::createParameterLayout()
-{
-    juce::AudioProcessorValueTreeState::ParameterLayout layout;
-
-    layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "bypass", 1 }, // Parameter ID (string and version)
-        "Bypass",                          // Parameter Name
-        false                              // Default value
-    ));
-
-    // We will add more parameters here later (e.g., standard selection)
-
-    return layout;
-}
-
 EarfatiguetoolAudioProcessor::EarfatiguetoolAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-        // --- Initializer list starts here ---
      : AudioProcessor (BusesProperties()
                      #if ! JucePlugin_IsMidiEffect
                       #if ! JucePlugin_IsSynth
@@ -36,21 +19,9 @@ EarfatiguetoolAudioProcessor::EarfatiguetoolAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       ),
-        // Add the APVTS initialization
-        apvts (*this, nullptr, "Parameters", createParameterLayout())
-        // --- Initializer list ends here ---
-#else
-        // Alternative Initializer list starts here (if
-        // JucePlugin_PreferredChannelConfigurations is defined)
-        : apvts (*this, nullptr, "Parameters", createParameterLayout())
-        // Alternative Initializer list ends here --
+                       )
 #endif
-
 {
-    // Constructor body is now likely empoty for basic parameter setup,
-    // as initialization happens in the initializer list above
-           
 }
 
 EarfatiguetoolAudioProcessor::~EarfatiguetoolAudioProcessor()
@@ -164,33 +135,27 @@ void EarfatiguetoolAudioProcessor::processBlock (juce::AudioBuffer<float>& buffe
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // --- Get Bypass State
-        // Note: Using getRawParameterValue is efficient in the audio thread.
-        // It returns an atomic float*, so we dereference and compare.
-        const bool isBypassed = *apvts.getRawParameterValue("bypass") > 0.5f;
-        // --- End Modify ---
-    
-        // ---[ Initial Buffer Clearing ]---
+    // In case we have more outputs than inputs, this code clears any output
+    // channels that didn't contain input data, (because these aren't
+    // guaranteed to be empty - they may contain garbage).
+    // This is here to avoid people getting screaming feedback
+    // when they first compile a plugin, but obviously you don't need to keep
+    // this code if your algorithm always overwrites all the output channels.
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // -- Add Bypass Check ---
-    if (isBypassed)
+    // This is the place where you'd normally do the guts of your plugin's
+    // audio processing...
+    // Make sure to reset the state if your inner loop is processing
+    // the samples and the outer loop is handling the channels.
+    // Alternatively, you can process the samples with the channels
+    // interleaved by keeping the same state.
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        // If bypassed, we simply do nothing further, ensuring pass-through.
-        // The buffer already contains the input audio.
-        return; // Exit processBlock early
-    }
-        // --- End of Bypass Check
-    
-    // ---[ Main Processing Loop Placeholder ]---
-        // This code will only run if isBypassed is false.
-        for (int channel = 0; channel < totalNumInputChannels; ++channel)
-        {
-            auto* channelData = buffer.getWritePointer (channel); // Gets a pointer to the audio samples for this channel
+        auto* channelData = buffer.getWritePointer (channel);
+
         // ..do something to the data...
     }
-    // --- End of Placeholder ---
 }
 
 //==============================================================================
@@ -207,20 +172,15 @@ juce::AudioProcessorEditor* EarfatiguetoolAudioProcessor::createEditor()
 //==============================================================================
 void EarfatiguetoolAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // Use the APVTS to easily store the state
-      auto state = apvts.copyState();
-      std::unique_ptr<juce::XmlElement> xml (state.createXml());
-      copyXmlToBinary (*xml, destData);
+    // You should use this method to store your parameters in the memory block.
+    // You could do that either as raw data, or use the XML or ValueTree classes
+    // as intermediaries to make it easy to save and load complex data.
 }
 
 void EarfatiguetoolAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // Use the APVTS to easily restore the state
-       std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-
-       if (xmlState.get() != nullptr)
-           if (xmlState->hasTagName (apvts.state.getType()))
-               apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    // You should use this method to restore your parameters from this memory block,
+    // whose contents will have been created by the getStateInformation() call.
 }
 
 //==============================================================================
