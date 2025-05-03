@@ -1,14 +1,46 @@
 /*
   ==============================================================================
 
-    This file contains the basic framework code for a JUCE plugin processor.
+    PluginProcessor.cpp - Implementation file for the audio processing logic.
 
   ==============================================================================
 */
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <cmath> // For std::sqrt, std::abs, std::log10 (used via Decibels)
 
+// Define static Parameter IDs from the header
+const juce::StringRef EarfatiguetoolAudioProcessor::PARAM_BYPASS_ID = "bypass";
+const juce::StringRef EarfatiguetoolAudioProcessor::PARAM_STANDARD_ID = "standard";
+
+//==============================================================================
+// Helper function implementation to create the parameter layout.
+//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout EarfatiguetoolAudioProcessor::createParameterLayout()
+{
+    juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+    // Add Bypass Parameter
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { PARAM_BYPASS_ID, 1 }, // Use defined ID
+        "Bypass",                                 // Name
+        false                                     // Default value
+    ));
+
+    // Add Mastering Standard Parameter (using Choice for text labels)
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { PARAM_STANDARD_ID, 1 }, // Use defined ID
+        "Standard",                                 // Name
+        juce::StringArray { "High DR", "Medium DR", "Low DR" }, // Choices
+        0                                           // Default index (High DR)
+    ));
+
+    return layout;
+}
+
+//==============================================================================
+// Constructor: Initializes the APVTS.
 //==============================================================================
 EarfatiguetoolAudioProcessor::EarfatiguetoolAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -19,15 +51,25 @@ EarfatiguetoolAudioProcessor::EarfatiguetoolAudioProcessor()
                       #endif
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
-                       )
+                       ),
+       // Initialize APVTS using the helper function
+       apvts (*this, nullptr, "Parameters", createParameterLayout())
+#else
+     : apvts (*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
+    DBG("EarfatiguetoolAudioProcessor CONSTRUCTOR finished.");
 }
 
+//==============================================================================
+// Destructor
+//==============================================================================
 EarfatiguetoolAudioProcessor::~EarfatiguetoolAudioProcessor()
 {
 }
 
+//==============================================================================
+// Standard Plugin Info Methods (Implementation)
 //==============================================================================
 const juce::String EarfatiguetoolAudioProcessor::getName() const
 {
@@ -36,31 +78,32 @@ const juce::String EarfatiguetoolAudioProcessor::getName() const
 
 bool EarfatiguetoolAudioProcessor::acceptsMidi() const
 {
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
-}
+    #if JucePlugin_WantsMidiInput
+        return true;
+    #else
+        return false;
+    #endif
+        }
 
 bool EarfatiguetoolAudioProcessor::producesMidi() const
 {
-   #if JucePlugin_ProducesMidiOutput
+    #if JucePlugin_ProducesMidiOutput
     return true;
-   #else
+    #else
     return false;
-   #endif
+    #endif
 }
 
 bool EarfatiguetoolAudioProcessor::isMidiEffect() const
 {
-   #if JucePlugin_IsMidiEffect
+    #if JucePlugin_IsMidiEffect
     return true;
-   #else
+#else
     return false;
-   #endif
+#endif
 }
 
+        
 double EarfatiguetoolAudioProcessor::getTailLengthSeconds() const
 {
     return 0.0;
@@ -68,8 +111,7 @@ double EarfatiguetoolAudioProcessor::getTailLengthSeconds() const
 
 int EarfatiguetoolAudioProcessor::getNumPrograms()
 {
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
+    return 1;
 }
 
 int EarfatiguetoolAudioProcessor::getCurrentProgram()
@@ -79,113 +121,244 @@ int EarfatiguetoolAudioProcessor::getCurrentProgram()
 
 void EarfatiguetoolAudioProcessor::setCurrentProgram (int index)
 {
+    juce::ignoreUnused (index);
 }
-
 const juce::String EarfatiguetoolAudioProcessor::getProgramName (int index)
 {
+    juce::ignoreUnused (index);
     return {};
 }
-
-void EarfatiguetoolAudioProcessor::changeProgramName (int index, const juce::String& newName)
-{
+void EarfatiguetoolAudioProcessor::changeProgramName (int index, const juce::String& newName) { juce::ignoreUnused (index, newName);
 }
 
 //==============================================================================
+// prepareToPlay: Called before playback starts.
+//==============================================================================
 void EarfatiguetoolAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    juce::ignoreUnused (sampleRate, samplesPerBlock);
+    // Reset levels perhaps?
+    currentPeakDb.store(-100.0f);
+    currentRmsDb.store(-100.0f);
+    currentCrestFactorDb.store(0.0f);
+    currentStatus.store(DynamicsStatus::Ok);
+    DBG("EarfatiguetoolAudioProcessor::prepareToPlay called.");
 }
 
+//==============================================================================
+// releaseResources: Called when playback stops.
+//==============================================================================
 void EarfatiguetoolAudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+    // Nothing specific needed for now.
 }
 
+//==============================================================================
+// isBusesLayoutSupported: Checks channel layouts.
+//==============================================================================
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool EarfatiguetoolAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
   #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
+    juce::ignoreUnused (layouts); return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    // Allow stereo input and output
+    if (layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo() &&
+        layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo())
+        return true;
+    else
         return false;
-
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
-    return true;
   #endif
 }
 #endif
 
+//==============================================================================
+// processBlock: Main audio processing callback.
+//==============================================================================
 void EarfatiguetoolAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    juce::ScopedNoDenormals noDenormals;
+    juce::ignoreUnused(midiMessages);
+    juce::ScopedNoDenormals noDenormals; // Optimization helper
+
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
+    // --- 1. Get Parameter Values (Thread Safe) ---
+    // Use getRawParameterValue for efficiency in audio thread. Convert bool > 0.5f.
+    const bool isBypassed = *apvts.getRawParameterValue(PARAM_BYPASS_ID) > 0.5f;
+    // Get the integer index of the selected choice parameter.
+    const int standardIndex = (int) *apvts.getRawParameterValue(PARAM_STANDARD_ID); // 0=High, 1=Medium, 2=Low
+
+    // --- 2. Clear Extra Output Channels ---
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
+    // --- 3. Handle Bypass ---
+    if (isBypassed)
+    {
+        // Reset levels if needed when bypassed
+        // currentPeakDb.store(-100.0f);
+        // currentRmsDb.store(-100.0f);
+        // currentCrestFactorDb.store(0.0f);
+        // currentStatus.store(DynamicsStatus::Ok);
+        return; // Exit early, leaving input audio in buffer (pass-through)
+    }
+
+    // --- 4. Audio Analysis (if not bypassed) ---
+
+    float blockPeakLinear = 0.0f;
+    float blockSumSquare = 0.0f;
+    auto numSamples = buffer.getNumSamples();
+    int totalSamplesProcessed = numSamples * totalNumInputChannels; // Only stereo supported
+
+    if (totalSamplesProcessed == 0) // Safety check if buffer is empty
+    {
+         currentPeakDb.store(-100.0f);
+         currentRmsDb.store(-100.0f);
+         currentCrestFactorDb.store(0.0f);
+         currentStatus.store(DynamicsStatus::Ok);
+         return; // Nothing to process
+    }
+
+    // Calculate Peak and SumSquare across all input channels (assuming stereo focus)
     for (int channel = 0; channel < totalNumInputChannels; ++channel)
     {
-        auto* channelData = buffer.getWritePointer (channel);
-
-        // ..do something to the data...
+        auto* channelData = buffer.getReadPointer(channel);
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            float currentSample = channelData[sample];
+            blockPeakLinear = std::max(blockPeakLinear, std::abs(currentSample));
+            blockSumSquare += currentSample * currentSample;
+        }
     }
+
+    // Calculate RMS (linear)
+    float blockRmsLinear = std::sqrt(blockSumSquare / totalSamplesProcessed);
+
+    // Calculate Levels in dB
+    float peakdB = juce::Decibels::gainToDecibels(blockPeakLinear, -100.0f);
+    float rmsdB = juce::Decibels::gainToDecibels(blockRmsLinear, -100.0f);
+
+    // Calculate Crest Factor (handle silence where RMS is very low)
+    float crestFactor = 0.0f;
+    if (rmsdB > -90.0f) // Only calculate if RMS is reasonably above noise floor
+    {
+        crestFactor = peakdB - rmsdB;
+    }
+
+    // Store results atomically for GUI thread
+    currentPeakDb.store(peakdB);
+    currentRmsDb.store(rmsdB);
+    currentCrestFactorDb.store(crestFactor);
+
+    // Determine Status based on selected standard and Crest Factor
+    DynamicsStatus newStatus = DynamicsStatus::Ok; // Default to Ok
+    float limitOk = 100.0f; // Initialize high
+    float limitReduced = 100.0f;
+
+    if (standardIndex == 0) // High DR
+    {
+        limitOk = highDrLimitOk;
+        limitReduced = highDrLimitReduced;
+    }
+    else if (standardIndex == 1) // Medium DR
+    {
+        limitOk = medDrLimitOk;
+        limitReduced = medDrLimitReduced;
+    }
+    else // Low DR (index 2)
+    {
+        limitOk = lowDrLimitOk;
+        limitReduced = lowDrLimitReduced;
+    }
+
+    // Compare Crest Factor to thresholds
+    if (crestFactor < limitReduced)
+    {
+        newStatus = DynamicsStatus::Loss;
+    }
+    else if (crestFactor < limitOk)
+    {
+        newStatus = DynamicsStatus::Reduced;
+    }
+    else
+    {
+        newStatus = DynamicsStatus::Ok;
+    }
+
+    currentStatus.store(newStatus); // Store the determined status
+
+
+    // --- 5. Explicit Pass-Through ---
+    // Since we only read the buffer, copy input to output to ensure sound passes through.
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    {
+        if (channel < totalNumOutputChannels)
+        {
+            if (buffer.getReadPointer(channel) != buffer.getWritePointer(channel))
+            {
+                 buffer.copyFrom(channel, 0, buffer, channel, 0, numSamples);
+            }
+        }
+    }
+
+    // --- Optional DBG for verification ---
+     // DBG("Peak: " << peakdB << ", RMS: " << rmsdB << ", CF: " << crestFactor << ", Status: " << (int)newStatus);
+
 }
 
 //==============================================================================
+// hasEditor: Returns true because we provide an editor.
+//==============================================================================
 bool EarfatiguetoolAudioProcessor::hasEditor() const
 {
-    return true; // (change this to false if you choose to not supply an editor)
+    return true; // We have an editor now
 }
 
+//==============================================================================
+// createEditor: Creates the editor instance.
+//==============================================================================
 juce::AudioProcessorEditor* EarfatiguetoolAudioProcessor::createEditor()
 {
+    // Create the editor, passing 'this' processor instance to it
     return new EarfatiguetoolAudioProcessorEditor (*this);
 }
 
 //==============================================================================
+// getStateInformation: Saves parameters using APVTS.
+//==============================================================================
 void EarfatiguetoolAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-}
-
-void EarfatiguetoolAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    // Get the current state from APVTS
+    auto state = apvts.copyState();
+    // Convert state to XML
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    // Save XML to binary memory block
+    copyXmlToBinary (*xml, destData);
+     DBG ("EarfatiguetoolAudioProcessor::getStateInformation called.");
 }
 
 //==============================================================================
-// This creates new instances of the plugin..
+// setStateInformation: Restores parameters using APVTS.
+//==============================================================================
+void EarfatiguetoolAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+     DBG ("EarfatiguetoolAudioProcessor::setStateInformation called.");
+    // Get XML from binary memory block
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+
+    // Check if XML is valid and has the correct tag name
+    if (xmlState != nullptr)
+        if (xmlState->hasTagName (apvts.state.getType()))
+            // Restore the state into APVTS
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+}
+
+//==============================================================================
+// createPluginFilter: Factory function called by host.
+//==============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
+     DBG("createPluginFilter() called.");
     return new EarfatiguetoolAudioProcessor();
 }

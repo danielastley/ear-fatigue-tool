@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="LjgHbi" name="ear-fatigue-tool" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" pluginFormats="buildAU,buildAUv3,buildVST3">
   <MAINGROUP id="wAiH1a" name="ear-fatigue-tool">
     <GROUP id="{5FC16A63-7B0D-22EC-F16C-3E7148433ED8}" name="Source">
       <FILE id="EDJdLv" name="PluginProcessor.cpp" compile="1" resource="0"
