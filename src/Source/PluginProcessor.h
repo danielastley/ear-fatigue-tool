@@ -1,57 +1,49 @@
-/*
-  ==============================================================================
-
-    PluginProcessor.h - Declaration file for the audio processing logic.
-
-  ==============================================================================
-*/
-
 #pragma once
 
-#include <JuceHeader.h>
-#include <atomic> // For thread-safe value storage
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_utils/juce_audio_utils.h> // Often needed for APVTS related things
+#include <atomic> // Required for std::atomic
+#include "Constants.h" // Include our constants
+
+// Forward declaration for the Parameter Layout function if needed,
+// though usually kept entirely within the .cpp or defined inline if simple.
+// If createParameterLayout is a private member function, no forward declaration needed here.
+
 
 //==============================================================================
 /**
-    The main audio processing class.
+    The main audio processing class for the DynamicsDoctor plugin.
 */
-class EarfatiguetoolAudioProcessor  : public juce::AudioProcessor
+class DynamicsDoctorProcessor : public juce::AudioProcessor
 {
 public:
     //==============================================================================
-    EarfatiguetoolAudioProcessor();
-    ~EarfatiguetoolAudioProcessor() override;
+    DynamicsDoctorProcessor();
+    ~DynamicsDoctorProcessor() override;
 
     //==============================================================================
-    // Called before playback starts or when sample rate/buffer size changes.
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    // Called when playback stops.
     void releaseResources() override;
 
-   #ifndef JucePlugin_PreferredChannelConfigurations
-    // Checks if the plugin supports the host's channel layout.
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
-   #endif
 
-    // The main audio processing callback.
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    // Note: `using AudioProcessor::processBlock;` is usually not needed here
 
     //==============================================================================
-    // Creates the plugin's editor window.
     juce::AudioProcessorEditor* createEditor() override;
-    // Returns true if the plugin has a custom editor.
-    bool hasEditor() const override;
+    bool hasEditor() const override { return true; }
 
     //==============================================================================
-    // Standard plugin information methods.
     const juce::String getName() const override;
+
     bool acceptsMidi() const override;
     bool producesMidi() const override;
     bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;
 
     //==============================================================================
-    // Program handling methods (basic implementation).
+    // Program management (less critical with APVTS, but required overrides)
     int getNumPrograms() override;
     int getCurrentProgram() override;
     void setCurrentProgram (int index) override;
@@ -59,55 +51,39 @@ public:
     void changeProgramName (int index, const juce::String& newName) override;
 
     //==============================================================================
-    // Saves the plugin's state (parameters).
     void getStateInformation (juce::MemoryBlock& destData) override;
-    // Restores the plugin's state.
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     //==============================================================================
-    // Parameter Management using AudioProcessorValueTreeState (APVTS)
-    juce::AudioProcessorValueTreeState apvts;
-
-    // Define Parameter IDs for easy access
-    static const juce::StringRef PARAM_BYPASS_ID;
-    static const juce::StringRef PARAM_STANDARD_ID;
-
-    // Enum to represent the dynamic range status
-    enum class DynamicsStatus
-    {
-        Ok,
-        Reduced,
-        Loss
-    };
-
-    // Getter for the editor to poll the current status (thread-safe)
-    DynamicsStatus getCurrentStatus() const { return currentStatus.load(); }
-    // Getter for the editor to poll the current crest factor (thread-safe)
-    float getCurrentCrestFactorDb() const { return currentCrestFactorDb.load(); }
-
+    // Public access to state for the editor or other components
+    juce::AudioProcessorValueTreeState& getValueTreeState();
+    DynamicsStatus getCurrentStatus() const; // Provides the latest calculated status
 
 private:
     //==============================================================================
-    // Helper function to define all parameters for APVTS.
+    // Parameter Creation Helper
+    // Defined in the .cpp file, returns the layout for the APVTS constructor
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // Atomic members to store analysis results thread-safely.
-    // Initialized to represent silence or an invalid state.
-    std::atomic<float> currentPeakDb { -100.0f };
-    std::atomic<float> currentRmsDb  { -100.0f };
-    std::atomic<float> currentCrestFactorDb { 0.0f }; // Crest Factor = Peak dB - RMS dB
-    std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Ok };
+    // Manages all plugin parameters and their state
+    juce::AudioProcessorValueTreeState parameters;
 
-    // Thresholds based on our discussion (can be tuned later)
-    const float highDrLimitOk = 14.0f; // Below this is Reduced for High DR
-    const float highDrLimitReduced = 11.0f; // Below this is Loss for High DR
+    // Raw pointers to atomic parameter values for efficient real-time access
+    // Initialized in the constructor after 'parameters' is created.
+    std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* presetParam = nullptr;
+    std::atomic<float>* peakParam   = nullptr; // Reporting parameter
+    std::atomic<float>* lufsParam   = nullptr; // Reporting parameter
 
-    const float medDrLimitOk = 11.0f; // Below this is Reduced for Medium DR
-    const float medDrLimitReduced = 8.0f; // Below this is Loss for Medium DR
+    // Internal state variables for analysis and status
+    std::atomic<DynamicsStatus> currentStatus; // Made atomic for safe access from UI/polling
+    float currentPeak = -100.0f; // Holds latest peak dBFS (written by audio thread)
+    float currentLufs = -100.0f; // Holds latest integrated LUFS (written by audio thread)
+    // Add other internal variables needed for analysis algorithms here...
 
-    const float lowDrLimitOk = 8.0f;  // Below this is Reduced for Low DR
-    const float lowDrLimitReduced = 5.0f;  // Below this is Loss for Low DR
+    // Private helper function to update the status based on current parameters and analysis
+    void updateStatus();
 
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EarfatiguetoolAudioProcessor)
+    //==============================================================================
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorProcessor)
 };
