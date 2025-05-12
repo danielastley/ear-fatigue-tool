@@ -3,7 +3,9 @@
 // Include necessary JUCE modules and standard headers explicitly
 #include <juce_core/juce_core.h>          // For juce::String, juce::Identifier
 #include <juce_graphics/juce_graphics.h>  // For juce::Colour, juce::Colours
+#include <juce_audio_processors/juce_audio_processors.h>
 #include <vector>                         // For std::vector
+#include <string>
 
 //------------------------------------------------------------------------------
 // Colour Palette
@@ -31,9 +33,9 @@ namespace Palette
 //------------------------------------------------------------------------------
 enum class DynamicsStatus
 {
-    Ok,
-    Reduced,
-    Loss,
+    Ok,       // Green
+    Reduced,  // Amber
+    Loss,     // Red
     Bypassed
 };
 
@@ -43,20 +45,29 @@ enum class DynamicsStatus
 //------------------------------------------------------------------------------
 struct DynamicsPreset
 {
-    juce::String id;            // Unique identifier string
-    juce::String label;         // Display name for the UI
-    float minDiffOk;        // Minimum Peak-LUFS difference (dB) to be considered 'Ok'
-    float minDiffReduced;   // Minimum Peak-LUFS difference (dB) to be considered 'Reduced'
+    std::string id;         // Unique identifier string for APVTS
+    juce::String label;     // Display name for the UI in the ComboBox
+
+    // LRA thresholds for traffic light logic (all values in LU)
+    float lraThresholdRed;    // Below this LRA value, light is RED
+    float lraThresholdAmber;  // Below this LRA value (and >= lraThresholdRed), light is AMBER
+                              // Above or equal to this value, light is GREEN
+    // For user display/info:
+    float targetLraMin;       // The minimum LU of the genre's target range
+    float targetLraMax;       // The maximum LU of the genre's target range
 };
 
-// Define the available presets
-// Using a const std::vector is standard and appropriate here.
+// Define the available presets with new LRA thresholds
 const std::vector<DynamicsPreset> presets = {
-    { "lufs-20", "LUFS -20 Reference", 12.0f, 6.0f }, // Example: Added "Reference" to label
-    { "lufs-14", "LUFS -14 Reference", 6.0f, 3.0f },
-    { "lufs-12", "LUFS -12 Reference", 3.0f, 1.5f }
-    // Add more presets here if needed
+    // id,         label,            lraThresholdRed, lraThresholdAmber, targetLraMin, targetLraMax
+    { "classical", "Classical",        10.0f,           12.0f,             10.0f,        20.0f },
+    { "jazz",      "Jazz",              8.0f,            9.4f,              8.0f,        15.0f },
+    { "pop_rock",  "Pop/Rock",          4.0f,            4.8f,              4.0f,         8.0f },
+    { "edm",       "EDM/Club/Dance",    3.0f,            3.6f,              3.0f,         6.0f }
+    // Note: The "Club/Dance" was merged into EDM for simplicity; adjust as needed.
 };
+
+    // The ParameterDefaults::preset might need adjustment if the default preset changes index.
 
 //------------------------------------------------------------------------------
 // Parameter Definitions
@@ -64,21 +75,21 @@ const std::vector<DynamicsPreset> presets = {
 //------------------------------------------------------------------------------
 namespace ParameterIDs
 {
-    // Using juce::Identifier can be slightly more efficient than juce::String
-    // for parameter lookups, but juce::String is also perfectly fine.
-    // Choose one style and be consistent. Let's stick to String as per original.
-    const juce::String bypass { "bypass" };
-    const juce::String preset { "preset" };
-    const juce::String peak   { "peak" };   // Reporting parameter: True Peak (dBFS)
-    const juce::String lufs   { "lufs" };   // Reporting parameter: Integrated LUFS
+    const juce::ParameterID bypass { "bypass", 1 }; // Use struct
+    const juce::ParameterID preset { "preset", 1 }; // Use struct
+    const juce::ParameterID peak   { "peak",   1 }; // Use struct
+    const juce::ParameterID lra    { "lra",    1 }; // Use struct
+    const juce::ParameterID resetLra { "resetLra", 1 };
 }
 
+// ParameterDefaults update based on new preset list if necessary
 namespace ParameterDefaults
 {
-    // Use constexpr for compile-time constants where possible
-    constexpr bool bypass = false;
-    constexpr int  preset = 0; // Default preset index (references `presets` vector)
-    // Note: Default values for reporting parameters (peak/lufs) are set in createParameterLayout
+constexpr bool bypass = false;
+   // Default to "Pop/Rock" which is now index 2 (0-based) in the updated `presets` vector
+   constexpr int  preset = 2;
+   constexpr float peak = -100.0f;
+   constexpr float lra = 20.0f; // Default LRA value (e.g., a high value to start Green)
 }
 
 //------------------------------------------------------------------------------
@@ -90,10 +101,10 @@ inline juce::Colour getStatusColour (DynamicsStatus status)
 {
     switch (status)
     {
-        case DynamicsStatus::Ok:      return Palette::Ok;
-        case DynamicsStatus::Reduced: return Palette::Reduced;
-        case DynamicsStatus::Loss:    return Palette::Loss;
-        case DynamicsStatus::Bypassed:/* fallthrough */ // Explicit fallthrough comment if needed
+        case DynamicsStatus::Ok:      return Palette::Ok;       // Green
+        case DynamicsStatus::Reduced: return Palette::Reduced;  // Amber
+        case DynamicsStatus::Loss:    return Palette::Loss;     // Red
+        case DynamicsStatus::Bypassed:/* fallthrough */
         default:                      return Palette::Muted; // Default case handles Bypassed and any unexpected values
     }
 }
@@ -102,9 +113,9 @@ inline juce::String getStatusMessage (DynamicsStatus status)
 {
     switch (status)
     {
-        case DynamicsStatus::Ok:      return "Dynamics: OK"; // Slightly shorter messages
+        case DynamicsStatus::Ok:      return "Dynamics: OK";
         case DynamicsStatus::Reduced: return "Dynamics: Reduced";
-        case DynamicsStatus::Loss:    return "Dynamics: Loss Risk"; // Changed message slightly
+        case DynamicsStatus::Loss:    return "Dynamics: Loss Risk";
         case DynamicsStatus::Bypassed:/* fallthrough */
         default:                      return "Monitoring Bypassed";
     }
@@ -132,7 +143,7 @@ namespace TrafficLightMetrics
 
         // If the current actual status matches the status this light represents, use the status colour
         if (currentActualStatus == lightTargetStatus)
-            return getStatusColour (lightTargetStatus); // Use the main status colour (Ok, Reduced, Loss)
+            return getStatusColour (lightTargetStatus); // This assumes TrafficLightComponent still has a concept of a 'target light'
 
         // Otherwise, the light is inactive
         return Palette::Background.brighter(InactiveBackgroundBrightnessFactor); // Slightly lighter than background
