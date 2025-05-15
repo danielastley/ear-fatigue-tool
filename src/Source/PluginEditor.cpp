@@ -8,24 +8,29 @@ DynamicsDoctorEditor::DynamicsDoctorEditor (DynamicsDoctorProcessor& p, juce::Au
 {
     // --- Traffic Light ---
     addAndMakeVisible (trafficLight);
-
+    
     // --- Status Label ---
     // Use FontOptions for specifying style (bold) with height
     statusLabel.setFont (juce::Font (juce::FontOptions (18.0f).withStyle ("Bold")));
     statusLabel.setJustificationType (juce::Justification::centred);
     statusLabel.setText ("Initializing...", juce::dontSendNotification); // Initial text
     addAndMakeVisible (statusLabel);
-
+    
     // --- Preset Selector ---
     presetLabel.setFont (juce::FontOptions(14.0f)); // Use direct height overload
     presetLabel.setJustificationType (juce::Justification::centredRight);
     presetLabel.attachToComponent(&presetSelector, true); // Label to the left
     addAndMakeVisible (presetLabel);
-
-    presetSelector.setTooltip ("Select the Loudness Range (LRA) reference standard");
+    
+    presetSelector.setTooltip ("Select the dynamic range reference standard");
     // Populate ComboBox items using the global `presets` vector from Constants.h
     for (int i = 0; i < presets.size(); ++i)
-        presetSelector.addItem (presets[i].label, i + 1); // ComboBox IDs must be 1-based
+        presetSelector.clear(); // Good practice to clear before repopulating, though usually only done once
+    for (int i = 0; i < presets.size(); ++i) // 'presets' here refers to the global const vector from Constants.h
+    {
+        presetSelector.addItem (presets[i].label, i + 1); // use the new labels from Constants.h
+    // ComboBox IDs are 1-based
+    }
     addAndMakeVisible (presetSelector);
     presetSelector.addListener (this); // Listen for immediate user changes
 
@@ -91,6 +96,12 @@ DynamicsDoctorEditor::DynamicsDoctorEditor (DynamicsDoctorProcessor& p, juce::Au
 
     // Perform an initial UI update based on the current processor state
     updateUIStatus();
+    
+    // In PluginEditor constructor
+    versionLabel.setText ("Build: " + juce::String(__DATE__) + " " + juce::String(__TIME__), juce::dontSendNotification);
+    addAndMakeVisible (versionLabel);
+    // In PluginEditor::resized()
+    // myVersionLabel.setBounds (10, 10, 200, 20);
 }
 
 DynamicsDoctorEditor::~DynamicsDoctorEditor()
@@ -270,17 +281,26 @@ void DynamicsDoctorEditor::updateUIStatus()
                 }
 
         // Update preset info label using the updated DynamicsPreset structure
-        int presetIndex = presetSelector.getSelectedId() - 1;
+        int presetIndex = presetSelector.getSelectedId() - 1; // IDs are 1-based
         if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size())
         {
             const auto& selectedPreset = presets[presetIndex];
-            // Display the LRA thresholds from the selected preset
-            // Text: "Genre (Red < X LU, Amber < Y LU, Green >= Y LU)"
-            // Example: "Classical (Red < 10.0 LU, Amber < 12.0 LU)"
-            juce::String info = selectedPreset.label + " (";
-            info += "Red < " + juce::String(selectedPreset.lraThresholdRed, 1) + " LU, ";
-            info += "Amber < " + juce::String(selectedPreset.lraThresholdAmber, 1) + " LU)";
-            presetInfoLabel.setText (info, juce::dontSendNotification);
+            // --- NEW TEXT FOR PRESET INFO LABEL ---
+                    // Displaying the target LRA range for the selected genre
+                    juce::String infoText = selectedPreset.label + " (Target LRA: ";
+                    infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
+                    infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
+                    presetInfoLabel.setText (infoText, juce::dontSendNotification);
+                    // --- END OF NEW TEXT ---
+
+                    /*
+                    // Optional: If you ALSO want to show the Red/Amber thresholds here:
+                    juce::String detailedInfo = selectedPreset.label;
+                    detailedInfo += " (Target: " + juce::String(selectedPreset.targetLraMin, 1) + "-" + juce::String(selectedPreset.targetLraMax, 1) + " LU";
+                    detailedInfo += " | Red < " + juce::String(selectedPreset.lraThresholdRed, 1);
+                    detailedInfo += ", Amber < " + juce::String(selectedPreset.lraThresholdAmber, 1) + ")";
+                    presetInfoLabel.setText(detailedInfo, juce::dontSendNotification);
+                    */
         }
         else
         {

@@ -82,7 +82,7 @@ private:
     juce::AudioParameterBool* resetLraParamObject = nullptr;
     
     // Loudness Measurement using our wrapper
-    LoudnessMeter loudnessMeter;
+    LoudnessMeter loudnessMeter; // Temp test
     
     // State for periodic updates (e.g., once per second)
     double internalSampleRate = 44100.;

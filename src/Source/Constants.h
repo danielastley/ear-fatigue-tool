@@ -60,13 +60,11 @@ struct DynamicsPreset
 // Define the available presets with new LRA thresholds
 const std::vector<DynamicsPreset> presets = {
     // id,         label,            lraThresholdRed, lraThresholdAmber, targetLraMin, targetLraMax
-    { "classical", "Classical",        10.0f,           12.0f,             10.0f,        20.0f },
-    { "jazz",      "Jazz",              8.0f,            9.4f,              8.0f,        15.0f },
-    { "pop_rock",  "Pop/Rock",          4.0f,            4.8f,              4.0f,         8.0f },
-    { "edm",       "EDM/Club/Dance",    3.0f,            3.6f,              3.0f,         6.0f }
-    // Note: The "Club/Dance" was merged into EDM for simplicity; adjust as needed.
-};
-
+    { "edm",       "EDM/Club",           3.0f,            3.6f,              3.0f,         8.0f },
+        { "pop_rock",  "Pop/Rock",           4.0f,            4.8f,              4.0f,         9.0f },
+        { "classical", "Classical/Acoustic", 6.0f,            7.2f,              6.0f,        22.0f }
+    };
+    
     // The ParameterDefaults::preset might need adjustment if the default preset changes index.
 
 //------------------------------------------------------------------------------
@@ -75,21 +73,21 @@ const std::vector<DynamicsPreset> presets = {
 //------------------------------------------------------------------------------
 namespace ParameterIDs
 {
-    const juce::ParameterID bypass { "bypass", 1 }; // Use struct
-    const juce::ParameterID preset { "preset", 1 }; // Use struct
-    const juce::ParameterID peak   { "peak",   1 }; // Use struct
-    const juce::ParameterID lra    { "lra",    1 }; // Use struct
-    const juce::ParameterID resetLra { "resetLra", 1 };
+    static const juce::ParameterID bypass { "bypass", 1 }; // Use struct
+    static const juce::ParameterID preset { "preset", 1 }; // Use struct
+    static const juce::ParameterID peak   { "peak",   1 }; // Use struct
+    static const juce::ParameterID lra    { "lra",    1 }; // Use struct
+    static const juce::ParameterID resetLra { "resetLra", 1 };
 }
 
 // ParameterDefaults update based on new preset list if necessary
 namespace ParameterDefaults
 {
 constexpr bool bypass = false;
-   // Default to "Pop/Rock" which is now index 2 (0-based) in the updated `presets` vector
-   constexpr int  preset = 2;
-   constexpr float peak = -100.0f;
-   constexpr float lra = 20.0f; // Default LRA value (e.g., a high value to start Green)
+  // Default to "Pop/Rock" which is now index 1 (0-based) in the updated `presets` vector
+  constexpr int  preset = 1;
+  constexpr float peak = -100.0f;
+  constexpr float lra = 20.0f; // Default LRA value (e.g., a high value to start Green)
 }
 
 //------------------------------------------------------------------------------
