@@ -1,0 +1,3 @@
+[submodule "src/ThirdParty/libebur128"]
+	path = src/ThirdParty/libebur128
+	url = https://github.com/jiixyj/libebur128.git
