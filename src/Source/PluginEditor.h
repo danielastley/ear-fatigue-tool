@@ -73,7 +73,8 @@ private:
     // Use RAII to manage the connection between UI elements and parameters.
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraButtonAttachment;
+   
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorEditor)

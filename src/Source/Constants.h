@@ -73,21 +73,20 @@ const std::vector<DynamicsPreset> presets = {
 //------------------------------------------------------------------------------
 namespace ParameterIDs
 {
-    static const juce::ParameterID bypass { "bypass", 1 }; // Use struct
-    static const juce::ParameterID preset { "preset", 1 }; // Use struct
-    static const juce::ParameterID peak   { "peak",   1 }; // Use struct
-    static const juce::ParameterID lra    { "lra",    1 }; // Use struct
-    static const juce::ParameterID resetLra { "resetLra", 1 };
+     const juce::ParameterID bypass { "bypass", 1 }; // Use struct
+     const juce::ParameterID preset { "preset", 1 }; // Use struct
+     const juce::ParameterID peak   { "peak",   1 }; // Use struct
+     const juce::ParameterID lra    { "lra",    1 }; // Use struct
+     const juce::ParameterID resetLra { "resetLra", 1 };
 }
 
 // ParameterDefaults update based on new preset list if necessary
 namespace ParameterDefaults
 {
-constexpr bool bypass = false;
-  // Default to "Pop/Rock" which is now index 1 (0-based) in the updated `presets` vector
-  constexpr int  preset = 1;
-  constexpr float peak = -100.0f;
-  constexpr float lra = 20.0f; // Default LRA value (e.g., a high value to start Green)
+    const bool bypass = false;
+    const int  preset = 1;
+    const float peak = -100.0f;
+    const float lra = 30.0f; // Default LRA value (e.g., a high value to start Green)
 }
 
 //------------------------------------------------------------------------------

@@ -72,12 +72,42 @@ DynamicsDoctorEditor::DynamicsDoctorEditor (DynamicsDoctorProcessor& p, juce::Au
     presetInfoLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.7f)); // Use Palette namespace
     addAndMakeVisible (presetInfoLabel);
 
+    
+    
     // --- Reset LRA Button Setup --- //
     resetLraButton.setTooltip("Reset the Loudness Range (LRA) measurement history");
       addAndMakeVisible(resetLraButton);
-      resetLraButton.addListener(this); // Optional: for direct click feedback if needed beyond parameter
-      resetLraAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-          valueTreeState, ParameterIDs::resetLra.getParamID(), resetLraButton);
+      // resetLraButton.addListener(this); // Optional: for direct click feedback if needed beyond parameter
+    // resetLraButtonAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(valueTreeState, ParameterIDs::resetLra.getParamID(), resetLraButton);
+    
+    resetLraButton.onClick = [this]()
+        {
+            DBG("=============================================================="); // Separator
+            DBG("EDITOR: resetLraButton.onClick lambda - Entered.");
+
+            auto* resetParamRaw = valueTreeState.getParameter(ParameterIDs::resetLra.getParamID()); // Use your .getParamID()
+
+            if (resetParamRaw != nullptr)
+            {
+                float currentValue = resetParamRaw->getValue();
+                DBG("EDITOR: resetLra param (" << ParameterIDs::resetLra.getParamID() << ") current value BEFORE setting: "
+                    << currentValue << (currentValue > 0.5f ? " (TRUE)" : " (FALSE)"));
+
+                DBG("EDITOR: Attempting to set resetLra param to TRUE (1.0f).");
+                resetParamRaw->setValueNotifyingHost(1.0f);
+
+                float valueAfterSet = resetParamRaw->getValue();
+                DBG("EDITOR: resetLra param value AFTER setValueNotifyingHost(1.0f): "
+                    << valueAfterSet << (valueAfterSet > 0.5f ? " (TRUE)" : " (FALSE)"));
+            }
+            else
+            {
+                DBG("EDITOR: ERROR - resetLra parameter NOT FOUND in valueTreeState!");
+                jassertfalse;
+            }
+            DBG("EDITOR: resetLraButton.onClick lambda - Exiting.");
+            DBG("==============================================================");
+        };
     
     
     // --- Version Label Setup --- // <<< ADD THIS SECTION
