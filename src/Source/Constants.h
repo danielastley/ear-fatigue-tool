@@ -36,7 +36,8 @@ enum class DynamicsStatus
     Ok,       // Green
     Reduced,  // Amber
     Loss,     // Red
-    Bypassed
+    Bypassed,
+    Measuring // New Listening State
 };
 
 //------------------------------------------------------------------------------
@@ -73,7 +74,7 @@ const std::vector<DynamicsPreset> presets = {
 //------------------------------------------------------------------------------
 namespace ParameterIDs
 {
-     const juce::ParameterID bypass { "bypass", 1 }; // Use struct
+     // const juce::ParameterID bypass { "bypass", 1 }; // Use struct
      const juce::ParameterID preset { "preset", 1 }; // Use struct
      const juce::ParameterID peak   { "peak",   1 }; // Use struct
      const juce::ParameterID lra    { "lra",    1 }; // Use struct
@@ -83,10 +84,11 @@ namespace ParameterIDs
 // ParameterDefaults update based on new preset list if necessary
 namespace ParameterDefaults
 {
-    const bool bypass = false;
+    // const bool bypass = false;
     const int  preset = 1;
     const float peak = -100.0f;
-    const float lra = 30.0f; // Default LRA value (e.g., a high value to start Green)
+    const float lra = 0.0f; // Default LRA value (e.g., a high value to start Green)
+    constexpr float LRA_MEASURING_DURATION = 6.0f; // Duration to measure LRA in seconds
 }
 
 //------------------------------------------------------------------------------
@@ -101,6 +103,7 @@ inline juce::Colour getStatusColour (DynamicsStatus status)
         case DynamicsStatus::Ok:      return Palette::Ok;       // Green
         case DynamicsStatus::Reduced: return Palette::Reduced;  // Amber
         case DynamicsStatus::Loss:    return Palette::Loss;     // Red
+        case DynamicsStatus::Measuring: return Palette::Secondary.withAlpha(0.6f);   // Dimmed foregroun for measuring
         case DynamicsStatus::Bypassed:/* fallthrough */
         default:                      return Palette::Muted; // Default case handles Bypassed and any unexpected values
     }
@@ -113,6 +116,7 @@ inline juce::String getStatusMessage (DynamicsStatus status)
         case DynamicsStatus::Ok:      return "Dynamics: OK";
         case DynamicsStatus::Reduced: return "Dynamics: Reduced";
         case DynamicsStatus::Loss:    return "Dynamics: Loss Risk";
+        case DynamicsStatus::Measuring: return "Measuring LRA..."; // New Listening Message
         case DynamicsStatus::Bypassed:/* fallthrough */
         default:                      return "Monitoring Bypassed";
     }
@@ -133,34 +137,40 @@ namespace TrafficLightMetrics
     constexpr float BypassedBorderDarkenFactor = 0.3f;
 
 
-    inline juce::Colour getLightColour (DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
+inline juce::Colour getLightColour (DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
     {
         if (currentActualStatus == DynamicsStatus::Bypassed)
-            return Palette::Muted.withAlpha (BypassedAlpha); // Dimmed grey for bypassed
+            return Palette::Muted.withAlpha (BypassedAlpha);
+        
+        if (currentActualStatus == DynamicsStatus::Measuring)
+        {
+            // Example: All lights dim/off, or a specific "measuring" pattern
+            // For simplicity here, let's make them look like "inactive" when measuring
+            return Palette::Background.brighter(InactiveBackgroundBrightnessFactor);
+        }
 
-        // If the current actual status matches the status this light represents, use the status colour
         if (currentActualStatus == lightTargetStatus)
-            return getStatusColour (lightTargetStatus); // This assumes TrafficLightComponent still has a concept of a 'target light'
+            return getStatusColour (lightTargetStatus);
 
-        // Otherwise, the light is inactive
-        return Palette::Background.brighter(InactiveBackgroundBrightnessFactor); // Slightly lighter than background
+        return Palette::Background.brighter(InactiveBackgroundBrightnessFactor);
     }
 
-    inline float getLightBorderThickness()
-    {
-        return LightBorderThickness;
-    }
+    // getLightBorderThickness remains the same
 
     inline juce::Colour getLightBorderColour (DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
     {
          if (currentActualStatus == DynamicsStatus::Bypassed)
             return Palette::Muted.darker(BypassedBorderDarkenFactor);
 
-        // If this light is the active one, use a darkened version of its status colour
+         if (currentActualStatus == DynamicsStatus::Measuring)
+         {
+             // Example: Same border as inactive
+             return Palette::Foreground.withAlpha(InactiveAlpha);
+         }
+
         if (currentActualStatus == lightTargetStatus)
             return getStatusColour (lightTargetStatus).darker(ActiveBorderDarkenFactor);
 
-        // Otherwise, it's an inactive border
-        return Palette::Foreground.withAlpha(InactiveAlpha); // Dimmed foreground colour
+        return Palette::Foreground.withAlpha(InactiveAlpha);
     }
 } // namespace TrafficLightMetrics

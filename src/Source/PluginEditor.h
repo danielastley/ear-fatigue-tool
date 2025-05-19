@@ -58,8 +58,8 @@ private:
     juce::Label statusLabel       { "statusLabel", "Status:" };
     juce::ComboBox presetSelector { "presetSelector" };
     juce::Label presetLabel       { "presetLabel", "Preset:" };
-    juce::ToggleButton bypassButton { "bypassButton" };
-    juce::Label bypassLabel       { "bypassLabel", "Bypass" };
+    // juce::ToggleButton bypassButton { "bypassButton" };
+    // juce::Label bypassLabel       { "bypassLabel", "Bypass" };
 
     juce::Label peakValueLabel    { "peakValueLabel", "-inf dBFS" }; // Default text
     juce::Label lraValueLabel    { "lraValueLabel", "0.0 LU" }; // Changed default text for clarity
@@ -72,7 +72,7 @@ private:
     // --- Parameter Attachments ---
     // Use RAII to manage the connection between UI elements and parameters.
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+    // std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraButtonAttachment;
    
 

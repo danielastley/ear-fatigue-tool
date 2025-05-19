@@ -17,7 +17,7 @@ DynamicsDoctorProcessor::DynamicsDoctorProcessor()
     DBG("DynamicsDoctorProcessor Constructor - START");
 
     // Retrieve raw pointers to parameter values
-    bypassParam = parameters.getRawParameterValue(ParameterIDs::bypass.getParamID());
+    // bypassParam = parameters.getRawParameterValue(ParameterIDs::bypass.getParamID());
     presetParam = parameters.getRawParameterValue(ParameterIDs::preset.getParamID());
     peakParam   = parameters.getRawParameterValue(ParameterIDs::peak.getParamID());
     lraParam    = parameters.getRawParameterValue(ParameterIDs::lra.getParamID());
@@ -26,12 +26,12 @@ DynamicsDoctorProcessor::DynamicsDoctorProcessor()
     resetLraParamObject = dynamic_cast<juce::AudioParameterBool*>(parameters.getParameter(ParameterIDs::resetLra.getParamID()));
 
     // --- Assertions to ensure parameters were found and correctly typed ---
-    if (bypassParam == nullptr) {
-        DBG("ERROR IN CONSTRUCTOR: bypassParam is nullptr!");
-        DBG("Ensure 'ParameterIDs::bypass.getParamID()' (" << ParameterIDs::bypass.getParamID()
-            << ") matches a parameter in createParameterLayout().");
-        jassertfalse; // Halt in debug if null
-    }
+    // if (bypassParam == nullptr) {
+        // DBG("ERROR IN CONSTRUCTOR: bypassParam is nullptr!");
+        // DBG("Ensure 'ParameterIDs::bypass.getParamID()' (" << ParameterIDs::bypass.getParamID()
+        //    << ") matches a parameter in createParameterLayout().");
+       // jassertfalse; // Halt in debug if null
+    // }
     if (presetParam == nullptr) {
         DBG("ERROR IN CONSTRUCTOR: presetParam is nullptr!");
         DBG("Ensure 'ParameterIDs::preset.getParamID()' (" << ParameterIDs::preset.getParamID()
@@ -72,13 +72,13 @@ DynamicsDoctorProcessor::DynamicsDoctorProcessor()
     // Add listeners for parameters you need to react to in parameterChanged
     DBG("Constructor: Adding parameter listeners...");
     parameters.addParameterListener(ParameterIDs::resetLra.getParamID(), this);
-    parameters.addParameterListener(ParameterIDs::bypass.getParamID(), this);
+    // parameters.addParameterListener(ParameterIDs::bypass.getParamID(), this);
     parameters.addParameterListener(ParameterIDs::preset.getParamID(), this);
 
     // Set initial status based on default parameter values (especially bypass)
     // This ensures the plugin starts in a consistent state.
-    DBG("Constructor: Calling initial updateStatusBasedOnLRA().");
-    updateStatusBasedOnLRA(currentGlobalLRA.load());
+    DBG("Constructor: currentStatus is Measuring. Initial LRA display will reflect this.");
+    // updateStatusBasedOnLRA(currentGlobalLRA.load());
     
     // Check preset default validity
     jassert(ParameterDefaults::preset >= 0 && static_cast<size_t>(ParameterDefaults::preset) < presets.size() && "Default preset index is out of bounds!");
@@ -91,7 +91,7 @@ DynamicsDoctorProcessor::~DynamicsDoctorProcessor()
     DBG("DynamicsDoctorProcessor Destructor - START");
     // Remove listeners to prevent dangling pointers if the APVTS outlives this or if callbacks happen during destruction
     parameters.removeParameterListener(ParameterIDs::resetLra.getParamID(), this);
-    parameters.removeParameterListener(ParameterIDs::bypass.getParamID(), this);
+    // parameters.removeParameterListener(ParameterIDs::bypass.getParamID(), this);
     parameters.removeParameterListener(ParameterIDs::preset.getParamID(), this);
     DBG("DynamicsDoctorProcessor Destructor - END");
 }
@@ -102,14 +102,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout DynamicsDoctorProcessor::cre
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
     
    // Bypass Parameter
-    auto bypassAttributes = juce::AudioParameterBoolAttributes().withStringFromValueFunction([](float v, int) { return v > 0.5f ? "Bypassed" : "Active"; });
+    // auto bypassAttributes = juce::AudioParameterBoolAttributes().withStringFromValueFunction([](float v, int) { return v > 0.5f ? "Bypassed" : "Active"; });
     
-   params.push_back (std::make_unique<juce::AudioParameterBool>(
-            ParameterIDs::bypass,
-            "bypass",
-            ParameterDefaults::bypass,
-            bypassAttributes
-               ));
+   // params.push_back (std::make_unique<juce::AudioParameterBool>(
+            // ParameterIDs::bypass,
+            // "bypass",
+            // ParameterDefaults::bypass,
+            // bypassAttributes
+             //   ));
     
     // Preset Parameter
     juce::StringArray presetLabels;
@@ -162,24 +162,22 @@ void DynamicsDoctorProcessor::prepareToPlay (double newSampleRate, int samplesPe
 {
     DBG("--- PREPARE TO PLAY ---");
     internalSampleRate = newSampleRate;
-    samplesUntilLraUpdate = static_cast<int>(internalSampleRate); // Trigger update after 1st second
+    // samplesUntilLraUpdate setup below
 
-    // Prepare our LoudnessMeter wrapper with number of channels from the main output bus
-    // It's important to use the actual number of channels the processor will output
-    // as libebur128 needs to be initialized for that specific channel count.
     int numChannelsForMeter = getTotalNumOutputChannels();
-    if (numChannelsForMeter == 0) numChannelsForMeter = 2; // Fallback if buses not ready
+    if (numChannelsForMeter == 0) numChannelsForMeter = 2;
     
     loudnessMeter.prepare(internalSampleRate, numChannelsForMeter, samplesPerBlock);
     DBG("LoudnessMeter prepared in prepareToPlay.");
     
-    // Reset internal state
     currentPeak.store(ParameterDefaults::peak);
-    currentGlobalLRA.store(ParameterDefaults::lra); // Reset LRA
-    // if (peakParam) peakParam->store(ParameterDefaults::peak); // redundant
-    // if (lraParam) lraParam->store(ParameterDefaults::lra); // redundant
+    currentGlobalLRA.store(0.0f);             // Start LRA at 0
+    if (lraParam) lraParam->store(currentGlobalLRA.load());
 
-    // currentStatus.store(DynamicsStatus::Bypassed); // Start as bypassed
+    samplesProcessedSinceReset.store(0);
+    samplesUntilLraUpdate = 0; // Trigger first LRA calculation attempt quickly
+    currentStatus.store(DynamicsStatus::Measuring);
+    DBG("prepareToPlay: currentStatus set to Measuring. samplesProcessedSinceReset = 0. LRA set to 0.");
 }
 
 void DynamicsDoctorProcessor::releaseResources()
@@ -208,6 +206,14 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
     juce::ignoreUnused(midiMessages);
     
+    // DBG for overall processBlock entry and key states
+      //  DBG("PB: Entry. SamplesIn: " << buffer.getNumSamples()
+      //      << ", SR: " << internalSampleRate
+        //    << ", Status: " << static_cast<int>(currentStatus.load()) // Status: 0=Ok, 1=Reduced, 2=Loss, 3=Bypassed, 4=Measuring
+         //   << ", SamplesSinceReset: " << samplesProcessedSinceReset.load()
+          //  << ", SamplesUntilLRAUpdate: " << samplesUntilLraUpdate);
+    
+    
     // Check if the sample rate is valid before proceeding
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -215,24 +221,40 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
     
-    // Ensure bypassParam is not null before dereferencing
-    const bool bypassed = (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false; // Default to not bypassed if param somehow null
+    // --- All Bypass Logic Removed from here ---
+    // const bool bypassed = (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false; // Default to not bypassed if param somehow null
     
-    if (bypassed)
-    {
-        if (currentStatus.load() != DynamicsStatus::Bypassed)
-        {
-            currentStatus.store(DynamicsStatus::Bypassed);
-            currentGlobalLRA.store(ParameterDefaults::lra);
-            if (lraParam) lraParam->store(currentGlobalLRA.load());
-        }
-        return; // Keep the early return for bypassed state if you hardcode `bypassed`
-    }
+    // if (bypassed)
+    // {
+        // if (currentStatus.load() != DynamicsStatus::Bypassed)
+        // {
+         //    currentStatus.store(DynamicsStatus::Bypassed);
+            // Optionally rest LRA values to a default when bypassed, or let them freeze
+            // currentGlobalLRA.store(ParameterDefaults::lra);
+            
+           // currentPeak.store(ParameterDefaults::lra); // Reset LRA to default
+           // if (lraParam) lraParam->store(currentGlobalLRA.load()); // Update APVTS param
+       // }
+        // return; // Keep the early return for bypassed state if you hardcode `bypassed`
+   // }
        
-    if (currentStatus.load() == DynamicsStatus::Bypassed)
-    {
-        updateStatusBasedOnLRA(currentGlobalLRA.load()); // Relies on parameters
-    }
+    // If we were bypassed and now we are not, switch to Measuring
+    // if (currentStatus.load() == DynamicsStatus::Bypassed)  // Coming out of bypass
+    // {
+     //   DBG("ProcessBlock: Coming out of bypass. Resetting LRA and peak.");
+        // Effectively do a soft reset of LRA for a fresh start
+        // This ensures LRA doesn't jump from an old value.
+        // Option 1: Full meter reset
+        // handleResetLRA(); // This will set status to Measuring and reset samplesProcessedSinceReset
+        // Option 2: Soft reset of counters and status (if handleResetLRA feels too heavy here)
+        // loudnessMeter.prepare(internalSampleRate, getTotalNumOutputChannels() > 0 ? getTotalNumOutputChannels() : 2, getBlockSize() > 0 ? getBlockSize() : 512); // Re-init meter
+        // currentGlobalLRA.store(0.0f);
+       //  if (lraParam) lraParam->store(0.0f);
+       // samplesProcessedSinceReset.store(0); // Reset counter when coming out of bypass
+       // samplesUntilLraUpdate = 0;         // Trigger LRA update soon
+        //currentStatus.store(DynamicsStatus::Measuring);
+      //
+        // DBG("ProcessBlock: Coming out of bypass. Status set to Measuring.");
         
     // --- Peak Tracking --- (This part uses `currentPeak` (atomic) so it's mostly fine)
     float blockMax = 0.0f;
@@ -244,27 +266,74 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (peakParam != nullptr) peakParam->store(currentPeak);
         
     // --- Feed audio to LoudnessMeter --- (Assumed fine for now)
-    loudnessMeter.processBlock(buffer);
+    loudnessMeter.processBlock(buffer); // Meter is always processing if not bypassed
+    
+    // DBG("ProcessBlock - NumSamples: " << buffer.getNumSamples()
+     //   << ", Current Status: " << static_cast<int>(currentStatus.load())
+      //  << ", Samples Processed: " << samplesProcessedSinceReset.load());
         
-    samplesUntilLraUpdate -= buffer.getNumSamples();
-    if (samplesUntilLraUpdate <=0)
+    if (currentStatus.load() == DynamicsStatus::Measuring) // Only add to counter if measuring
+            {
+                samplesProcessedSinceReset.fetch_add(buffer.getNumSamples());
+            }
+
+    // --- Periodic LRA Update --- (This part is a bit more complex)
+    if (buffer.getNumSamples() > 0) { // Only decrement if processing samples
+        samplesUntilLraUpdate -= buffer.getNumSamples();
+    }
+
+    if (samplesUntilLraUpdate <= 0) // Condition A: Time to update LRA values
     {
-        samplesUntilLraUpdate += static_cast<int>(internalSampleRate);
-            
-        float newLRA = loudnessMeter.getLoudnessRange();
-        if (std::isinf(newLRA) || std::isnan(newLRA))
+        double rate = (internalSampleRate > 0.0) ? internalSampleRate : 44100.0;
+        // Note: samplesUntilLraUpdate is reset at the END of this block now.
+        DBG("PB: LRA Update Block. SamplesUntilLRAUpdate was <= 0."); // Removed resetting DBG here for clarity
+
+        const float lraMeasuringDurationSeconds = 6.0f;
+        const int minSamplesForReliableLRA = static_cast<int>(rate * lraMeasuringDurationSeconds);
+        DBG("PB: minSamplesForReliableLRA: " << minSamplesForReliableLRA << ", current SamplesSinceReset: " << samplesProcessedSinceReset.load());
+
+        // ALWAYS get the current LRA from the meter
+        float newLRA = loudnessMeter.getLoudnessRange(); // This calls your LoudnessMeter method
+        if (std::isinf(newLRA) || std::isnan(newLRA) || newLRA < 0)
         {
+            // It's often better to let newLRA be what the meter returns initially,
+            // and handle display of "invalid" values in the UI if needed.
+            // Forcing to 0.0f here might hide issues in the meter.
+            // Let's keep it for now but be aware.
+            DBG("PB: newLRA from meter was inf, nan, or <0. Clamping to 0.0f. Original: " << newLRA);
             newLRA = 0.0f;
         }
         currentGlobalLRA.store(newLRA);
-            
-            
-        if (lraParam != nullptr) lraParam->store(currentGlobalLRA.load());
-            
-        updateStatusBasedOnLRA(currentGlobalLRA.load());
-        
-        
-    }
+        if (lraParam != nullptr)
+        {
+            lraParam->store(newLRA);
+        }
+        DBG("PB: Fetched newLRA: " << newLRA << ". Stored to currentGlobalLRA & lraParam.");
+
+
+        if (currentStatus.load() == DynamicsStatus::Measuring) // Condition B: Currently in Measuring UI state
+        {
+            DBG("PB: Currently in Measuring State. Samples processed: " << samplesProcessedSinceReset.load());
+            if (samplesProcessedSinceReset.load() >= minSamplesForReliableLRA) // Condition C: Enough samples processed
+            {
+                DBG("PB: Measuring complete. Transitioning state based on newLRA: " << newLRA);
+                updateStatusBasedOnLRA(newLRA); // Transition out of Measuring
+            }
+            else
+            {
+                DBG("ProcessBlock: Still measuring. Samples processed: " << samplesProcessedSinceReset.load() << " / " << minSamplesForReliableLRA
+                        << ". Current LRA being calculated: " << newLRA); // newLRA is from loudnessMeter.getLoudnessRange()
+                // Status remains Measuring. UI shows "Measuring..."
+                // lraParam has been updated with the current (possibly unstable) newLRA.
+            }
+        }
+        else // Already in Ok, Reduced, Loss (not Bypassed, not Measuring)
+        {
+            DBG("PB: Not in Measuring state. Updating status with newLRA: " << newLRA);
+            updateStatusBasedOnLRA(newLRA); // Update status with ongoing LRA
+        }
+        samplesUntilLraUpdate = static_cast<int>(rate); // Reset here for next
+        }
 }
 
 
@@ -273,10 +342,10 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 void DynamicsDoctorProcessor::updateStatusBasedOnLRA(float measuredLRA)
     {
         // Ensure parameters are not null before dereferencing
-        if (bypassParam != nullptr && bypassParam->load() > 0.5f) { // Good: added nullptr check
-            currentStatus.store(DynamicsStatus::Bypassed);
-            return;
-        }
+        // if (bypassParam != nullptr && bypassParam->load() > 0.5f) { // Good: added nullptr check
+        //    currentStatus.store(DynamicsStatus::Bypassed);
+         //   return;
+       // }
 
         if (presetParam == nullptr) { // Good: added nullptr check
             currentStatus.store(DynamicsStatus::Ok);
@@ -330,22 +399,20 @@ void DynamicsDoctorProcessor::handleResetLRA()
     loudnessMeter.prepare(internalSampleRate, numChannelsForMeter, blockSizeToUse);
     DBG("    PROCESSOR: handleResetLRA() - Returned from loudnessMeter.prepare().");
 
-    float oldAtomicLRA = currentGlobalLRA.load();
-    currentGlobalLRA.store(ParameterDefaults::lra);
-    DBG("    PROCESSOR: handleResetLRA() - currentGlobalLRA (atomic) reset from " << oldAtomicLRA << " to " << ParameterDefaults::lra);
-
-    if (lraParam) { // lraParam is your std::atomic<float>* linked to APVTS
-        float oldParamLRA = lraParam->load();
-        lraParam->store(ParameterDefaults::lra);
-        DBG("    PROCESSOR: handleResetLRA() - lraParam (APVTS value) set from " << oldParamLRA << " to " << ParameterDefaults::lra);
-    } else {
-        DBG("    PROCESSOR: handleResetLRA() - WARNING: lraParam is null, cannot update APVTS LRA parameter value directly via pointer.");
+    currentGlobalLRA.store(0.0f);
+    if (lraParam) {
+        lraParam->store(currentGlobalLRA.load());
+        DBG("    PROCESSOR: handleResetLRA() - lraParam (APVTS value) set to " << currentGlobalLRA.load());
     }
 
-    samplesUntilLraUpdate = static_cast<int>(internalSampleRate);
-    DBG("    PROCESSOR: handleResetLRA() - samplesUntilLraUpdate reset to " << samplesUntilLraUpdate);
+    samplesProcessedSinceReset.store(0);
+    samplesUntilLraUpdate = 0;
+    currentStatus.store(DynamicsStatus::Measuring);
+    DBG("    PROCESSOR: handleResetLRA() - currentStatus set to Measuring. samplesProcessedSinceReset = 0.");
+    
+    // DO NOT CALL updateStatusBasedOnLRA here. Let processBlock handle it.
+    // updateStatusBasedOnLRA(currentGlobalLRA.load()); // <<< REMOVE THIS LINE
 
-    updateStatusBasedOnLRA(currentGlobalLRA.load());
     DBG("    PROCESSOR: handleResetLRA() - Exiting.");
     DBG("    **********************************************************");
 }
@@ -355,27 +422,28 @@ void DynamicsDoctorProcessor::parameterChanged(const juce::String& parameterID, 
     DBG("PROCESSOR: parameterChanged - Received ID: '" << parameterID
         << "', New Value: " << newValue << (newValue > 0.5f ? " (TRUE)" : " (FALSE)"));
 
-    if (parameterID == ParameterIDs::resetLra.getParamID()) // Use your .getParamID()
+    // 1. Handle the 'resetLra' parameter
+    if (parameterID == ParameterIDs::resetLra.getParamID()) // Using your .getParamID()
     {
-        DBG("PROCESSOR: parameterChanged - Matched ID: '" << ParameterIDs::resetLra.getParamID() << "'.");
+        DBG("PROCESSOR: parameterChanged - Matched ID: '" << ParameterIDs::resetLra.getParamID() << "' (resetLra).");
 
         if (newValue > 0.5f) // If reset button is "pressed" (true)
         {
             DBG("PROCESSOR: resetLra new value is TRUE. Calling handleResetLRA().");
-            handleResetLRA();
+            handleResetLRA(); // This resets the meter and sets status to Measuring
 
             DBG("PROCESSOR: Returned from handleResetLRA(). Attempting to set resetLra param back to FALSE (0.0f).");
             
-            // Try this more direct way to set the AudioParameterBool back to false
+            // Set the AudioParameterBool back to false
             if (resetLraParamObject != nullptr) // Use the member variable if it's valid
             {
-                resetLraParamObject->beginChangeGesture(); // Good practice
+                resetLraParamObject->beginChangeGesture();
                 resetLraParamObject->setValueNotifyingHost(0.0f);
-                resetLraParamObject->endChangeGesture();   // Good practice
+                resetLraParamObject->endChangeGesture();
                 DBG("PROCESSOR: resetLra (via resetLraParamObject) was set back to FALSE. Current bool state: "
                     << (resetLraParamObject->get() ? "TRUE" : "FALSE"));
             }
-            else // Fallback if resetLraParamObject was somehow null, though we guard against it in constructor
+            else // Fallback if resetLraParamObject was somehow null
             {
                 auto* paramToReset = static_cast<juce::AudioParameterBool*>(parameters.getParameter(ParameterIDs::resetLra.getParamID()));
                 if (paramToReset != nullptr) {
@@ -386,26 +454,32 @@ void DynamicsDoctorProcessor::parameterChanged(const juce::String& parameterID, 
                         << (paramToReset->get() ? "TRUE" : "FALSE"));
                 } else {
                     DBG("PROCESSOR: ERROR - resetLra parameter NOT FOUND to set it back to false!");
-                    jassertfalse;
+                    jassertfalse; // Should have been caught by constructor assertion
                 }
             }
         }
-        else
+        else // newValue is FALSE (0.0f) for resetLra
         {
-            DBG("PROCESSOR: resetLra new value is FALSE. No action taken in this 'else' block.");
+            DBG("PROCESSOR: resetLra new value is FALSE. No action taken in this 'else' block (already reset or initial state).");
         }
     }
-    // ... (rest of your parameterChanged for bypass and preset) ...
-    else if (parameterID == ParameterIDs::preset.getParamID() || parameterID == ParameterIDs::bypass.getParamID())
+    // 2. Handle 'preset' parameter changes
+    else if (parameterID == ParameterIDs::preset.getParamID()) // Using your .getParamID()
     {
-        DBG("PROCESSOR: parameterChanged - Matched ID: '" << parameterID << "'. Updating status ONLY.");
-        updateStatusBasedOnLRA(currentGlobalLRA.load());
+        DBG("PROCESSOR: parameterChanged - Matched ID: '" << parameterID << "' (Preset Changed). New preset index (float): " << newValue);
+        DBG("PROCESSOR: Preset changed. Calling handleResetLRA() to reset meter and re-enter Measuring state.");
+        handleResetLRA(); // This resets the meter and sets status to Measuring
+        // Note: updateStatusBasedOnLRA() is NOT called directly here for preset changes.
+        // The status will be Measuring. processBlock will eventually call updateStatusBasedOnLRA()
+        // with the new LRA (influenced by the new preset's thresholds) after the measuring period.
     }
+    // No more 'bypass' parameter handling here
     else
     {
-        DBG("PROCESSOR: parameterChanged - ID '" << parameterID << "' was not resetLra, preset, or bypass.");
+        DBG("PROCESSOR: parameterChanged - ID '" << parameterID << "' was not resetLra or preset. No specific action taken here.");
     }
-    DBG("--------------------------------------------------------------");
+
+    DBG("--------------------------------------------------------------"); // Separator at the end of the function call
 }
             
         // --- Standard AudioProcessor Methods (getName, acceptsMidi, etc.) ---
@@ -449,18 +523,13 @@ void DynamicsDoctorProcessor::parameterChanged(const juce::String& parameterID, 
             {
                 if (xmlState->hasTagName (parameters.state.getType())) // Check if it's our ValueTree
                 {
+                    DBG("setStateInformation: Loading state...");
                     parameters.replaceState (juce::ValueTree::fromXml (*xmlState));
                     
-                    // Your existing logic for after state is loaded:
-                    // Ensure LRA is reset and status reflects new preset/bypass.
-                    // It's generally better to do this in response to parameter changes
-                    // triggered by replaceState, or in a separate update call if needed.
-                    // However, let's keep your logic for now and see if the primary issue is resolved.
-                    // Consider if handleResetLRA() should be called if only a preset changed
-                    // without the whole project state being reloaded.
+                    DBG("setStateInformation: State loaded. Calling handleResetLRA() to ensure fresh measurement context.");
                     handleResetLRA(); // Reset LRA as history isn't saved
-                    updateStatusBasedOnLRA(currentGlobalLRA.load());
-                    updateStatusBasedOnLRA(currentGlobalLRA.load());
+                    // updateStatusBasedOnLRA(currentGlobalLRA.load());
+                    // updateStatusBasedOnLRA(currentGlobalLRA.load());
                 }
             }
         }

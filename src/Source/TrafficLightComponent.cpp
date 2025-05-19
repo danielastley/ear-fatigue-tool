@@ -60,7 +60,7 @@ void TrafficLightComponent::paintLight (juce::Graphics& g, const juce::Rectangle
     // Using the specific namespace clarifies where these helpers come from.
     const juce::Colour fillColour = TrafficLightMetrics::getLightColour (lightTargetStatus, currentStatus);
     const juce::Colour borderColour = TrafficLightMetrics::getLightBorderColour (lightTargetStatus, currentStatus);
-    const float borderThickness = TrafficLightMetrics::getLightBorderThickness();
+    const float borderThickness = TrafficLightMetrics::LightBorderThickness;
 
     // Draw the fill
     g.setColour (fillColour);

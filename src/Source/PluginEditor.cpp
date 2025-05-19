@@ -39,20 +39,20 @@ DynamicsDoctorEditor::DynamicsDoctorEditor (DynamicsDoctorProcessor& p, juce::Au
         valueTreeState, ParameterIDs::preset.getParamID(), presetSelector); // Use getParamID()
 
      // --- Bypass Toggle Button ---
-    bypassLabel.setFont (juce::FontOptions(14.0f)); // Use direct height overload
-    bypassLabel.setJustificationType (juce::Justification::centredRight);
-    bypassLabel.attachToComponent(&bypassButton, true); // Label to the left
-    addAndMakeVisible (bypassLabel);
+    // bypassLabel.setFont (juce::FontOptions(14.0f)); // Use direct height overload
+   //  bypassLabel.setJustificationType (juce::Justification::centredRight);
+   //  bypassLabel.attachToComponent(&bypassButton, true); // Label to the left
+   //  addAndMakeVisible (bypassLabel);
 
     // Use LookAndFeel for toggle button style instead of text
-    bypassButton.setButtonText("");
-    bypassButton.setTooltip ("Bypass dynamics monitoring");
-    addAndMakeVisible (bypassButton);
-    bypassButton.addListener (this); // Listen for immediate user clicks
+    // bypassButton.setButtonText("");
+    // bypassButton.setTooltip ("Bypass dynamics monitoring");
+    // addAndMakeVisible (bypassButton);
+    // bypassButton.addListener (this); // Listen for immediate user clicks
 
     // Attachment: Connects the Button state (on/off) to the APVTS parameter
-    bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-        valueTreeState, ParameterIDs::bypass.getParamID(), bypassButton); // Use getParamID()
+    //bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+     //   valueTreeState, ParameterIDs::bypass.getParamID(), bypassButton); // Use getParamID()
 
 
     // --- Value Labels ---
@@ -141,7 +141,7 @@ DynamicsDoctorEditor::~DynamicsDoctorEditor()
 
     // Remove listeners explicitly added
     presetSelector.removeListener(this);
-    bypassButton.removeListener(this);
+    // bypassButton.removeListener(this);
     resetLraButton.removeListener(this);
     
     // Attachments (`presetAttachment`, `bypassAttachment`) are automatically cleaned up
@@ -177,9 +177,7 @@ void DynamicsDoctorEditor::resized()
     constexpr int buttonRowHeight = 30; // Height for the reset button row
 
     auto bounds = getLocalBounds().reduced(padding); // Overall content area
-
-    // Top section: Status Label and Traffic Light
-    auto topArea = bounds.removeFromTop(bounds.getHeight() * 0.55f); // adjusted
+    auto topArea = bounds.removeFromTop(bounds.getHeight() * 0.50f); // adjusted
     statusLabel.setBounds(topArea.removeFromTop(topSectionHeight));
     // Add padding around the traffic light within its allocated space
     trafficLight.setBounds(topArea.reduced(10));
@@ -201,15 +199,17 @@ void DynamicsDoctorEditor::resized()
     
     // Layout Controls (Preset and Bypass) vertically
     controlArea.reduce(10, 5); // Adjust horizontal/vertical padding
+    
+    // Add extra space above the Preset adn Bypass controls
+    controlArea.removeFromTop(20); // Add 20px gap above the controls
     auto presetRow = controlArea.removeFromTop(controlHeight);
-    controlArea.removeFromTop(controlGap); // Add gap
-    auto bypassRow = controlArea.removeFromTop(controlHeight);
+    // controlArea.removeFromTop(controlGap); // Add gap
+    // auto bypassRow = controlArea.removeFromTop(controlHeight);
 
     // Preset Row: Label (implicit via attachToComponent) + ComboBox
     presetSelector.setBounds(presetRow.withLeft(presetRow.getX() + labelWidth).reduced(5, 0));
-
     // Bypass Row: Label (implicit via attachToComponent) + ToggleButton
-    bypassButton.setBounds(bypassRow.withLeft(bypassRow.getX() + labelWidth).reduced(5, 0));
+    // bypassButton.setBounds(bypassRow.withLeft(bypassRow.getX() + labelWidth).reduced(5, 0));
 
 
     // Layout Info Labels (Peak, LRA, Preset Info)
@@ -234,22 +234,9 @@ void DynamicsDoctorEditor::resized()
 //==============================================================================
 void DynamicsDoctorEditor::buttonClicked (juce::Button* buttonThatWasClicked)
 {
-    // Attachments handle parameter changes. This callback is mostly for additional logic
-    // or if you weren't using attachments for some reason.
-    //if (buttonThatWasClicked == &presetSelector) // This check is incorrect, presetSelector is ComboBox
-    //{
-       // Should be handled by comboBoxChanged
-    //}
-    if (buttonThatWasClicked == &bypassButton)
+    
+    if (buttonThatWasClicked == &resetLraButton) // <<< ADD THIS ELSE IF
     {
-        updateUIStatus(); // Update UI immediately on bypass click
-    }
-    else if (buttonThatWasClicked == &resetLraButton) // <<< ADD THIS ELSE IF
-    {
-        // The attachment changes the parameter. The processor's parameterChanged
-        // will call handleResetLRA() and then set the parameter back to false.
-        // We might want immediate UI feedback here if necessary, but timer will catch it.
-        // DBG("Reset LRA Button Clicked in Editor");
         updateUIStatus(); // Update UI immediately on reset click
     }
 }
@@ -277,82 +264,87 @@ void DynamicsDoctorEditor::timerCallback()
 // Private Helper Function to Update UI Elements
 void DynamicsDoctorEditor::updateUIStatus()
 {
-    // Get the current status from the processor (thread-safe read due to atomic)
     auto status = processorRef.getCurrentStatus();
+    trafficLight.setStatus(status); // Your TrafficLightComponent handles ::Measuring based on Constants.h
+    statusLabel.setText(getStatusMessage(status), juce::dontSendNotification);
+    statusLabel.setColour(juce::Label::textColourId, getStatusColour(status));
 
-    // Update the Traffic Light component
-    trafficLight.setStatus (status);
+    // const bool isBypassed = (status == DynamicsStatus::Bypassed);
+    const bool isPluginConsideredActive = true; // Plugin is always active unless host bypasses
+    const bool isMeasuring = (status == DynamicsStatus::Measuring);
 
-    // Update the main Status Label text and colour using helpers from Constants.h
-    statusLabel.setText (getStatusMessage(status), juce::dontSendNotification);
-    statusLabel.setColour (juce::Label::textColourId, getStatusColour(status));
-
-    // Determine if the plugin is currently bypassed
-    const bool isBypassed = (status == DynamicsStatus::Bypassed);
-
-    // Update value labels only if not bypassed
-    if (!isBypassed)
+    //if (isBypassed)
+    //{
+     //    peakValueLabel.setVisible(false);
+       //  lraValueLabel.setVisible(false);
+       //  presetInfoLabel.setVisible(false);
+       //  presetSelector.setEnabled(false);
+        // presetLabel.setEnabled(false);
+        // resetLraButton.setEnabled(false);
+    // }
+    if (isMeasuring)
     {
-        // Fetch Peak from parameter
-        auto peakParam = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID());
-        if (peakParam != nullptr)
-        {
-            peakValueLabel.setText ("Peak: " + juce::String(peakParam->load(), 1) + " dBFS", juce::dontSendNotification);
+        peakValueLabel.setText("Peak: Receiving...", juce::dontSendNotification); // Or "--- dBFS"
+        lraValueLabel.setText("LRA: Measuring...", juce::dontSendNotification);
+        // Optionally show preset info even while measuring
+        int presetIndex = presetSelector.getSelectedId() - 1;
+        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size()) {
+            const auto& selectedPreset = presets[presetIndex];
+            juce::String infoText = selectedPreset.label + " (Target LRA: ";
+            infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
+            infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
+            presetInfoLabel.setText(infoText, juce::dontSendNotification);
+        } else {
+            presetInfoLabel.setText("Select Preset", juce::dontSendNotification);
+        }
+
+        peakValueLabel.setVisible(true);
+        lraValueLabel.setVisible(true);
+        presetInfoLabel.setVisible(true);
+        presetSelector.setEnabled(true); // Allow preset changes while measuring
+        presetLabel.setEnabled(true);
+        resetLraButton.setEnabled(true); // Allow reset even while measuring
+    }
+    else // Not Bypassed (always true from interal param view) and Not Measuring (Ok, Reduced, Loss)
+    {
+        auto peakParamPtr = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID());
+        if (peakParamPtr != nullptr) {
+            peakValueLabel.setText ("Peak: " + juce::String(peakParamPtr->load(), 1) + " dBFS", juce::dontSendNotification);
         } else {
             peakValueLabel.setText("Peak: --- dBFS", juce::dontSendNotification);
         }
         
-        // Fetch LRA value from reporting parameter (which processor updates from libebur128)
-                auto lraReportingParam = valueTreeState.getRawParameterValue(ParameterIDs::lra.getParamID());
-                if (lraReportingParam != nullptr) {
-                    lraValueLabel.setText ("LRA: " + juce::String(lraReportingParam->load(), 1) + " LU", juce::dontSendNotification);
-                } else {
-                     lraValueLabel.setText ("LRA: --- LU", juce::dontSendNotification);
-                }
-
-        // Update preset info label using the updated DynamicsPreset structure
-        int presetIndex = presetSelector.getSelectedId() - 1; // IDs are 1-based
-        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size())
-        {
-            const auto& selectedPreset = presets[presetIndex];
-            // --- NEW TEXT FOR PRESET INFO LABEL ---
-                    // Displaying the target LRA range for the selected genre
-                    juce::String infoText = selectedPreset.label + " (Target LRA: ";
-                    infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
-                    infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
-                    presetInfoLabel.setText (infoText, juce::dontSendNotification);
-                    // --- END OF NEW TEXT ---
-
-                    /*
-                    // Optional: If you ALSO want to show the Red/Amber thresholds here:
-                    juce::String detailedInfo = selectedPreset.label;
-                    detailedInfo += " (Target: " + juce::String(selectedPreset.targetLraMin, 1) + "-" + juce::String(selectedPreset.targetLraMax, 1) + " LU";
-                    detailedInfo += " | Red < " + juce::String(selectedPreset.lraThresholdRed, 1);
-                    detailedInfo += ", Amber < " + juce::String(selectedPreset.lraThresholdAmber, 1) + ")";
-                    presetInfoLabel.setText(detailedInfo, juce::dontSendNotification);
-                    */
+        auto lraReportingParam = valueTreeState.getRawParameterValue(ParameterIDs::lra.getParamID());
+        if (lraReportingParam != nullptr) {
+            lraValueLabel.setText ("LRA: " + juce::String(lraReportingParam->load(), 1) + " LU", juce::dontSendNotification);
+        } else {
+             lraValueLabel.setText ("LRA: --- LU", juce::dontSendNotification);
         }
-        else
-        {
+
+        int presetIndex = presetSelector.getSelectedId() - 1;
+        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size()) {
+            // ... (your existing preset info label logic) ...
+            const auto& selectedPreset = presets[presetIndex];
+            juce::String infoText = selectedPreset.label + " (Target LRA: ";
+            infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
+            infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
+            presetInfoLabel.setText (infoText, juce::dontSendNotification);
+        } else {
             presetInfoLabel.setText ("Invalid Preset Selected", juce::dontSendNotification);
         }
 
         peakValueLabel.setVisible(true);
         lraValueLabel.setVisible(true);
         presetInfoLabel.setVisible(true);
-    }
-    else // Is Bypassed
-    {
-         peakValueLabel.setVisible(false);
-         lraValueLabel.setVisible(false);
-         presetInfoLabel.setVisible(false);
+        presetSelector.setEnabled(true);
+        presetLabel.setEnabled(true);
+        resetLraButton.setEnabled(true);
     }
 
-     presetSelector.setEnabled(!isBypassed);
-     presetLabel.setEnabled(!isBypassed);
-     presetLabel.setColour(juce::Label::textColourId,
-                           isBypassed ? Palette::DisabledText : Palette::Foreground);
-     bypassLabel.setEnabled(true);
-     bypassLabel.setColour(juce::Label::textColourId, Palette::Foreground);
-     resetLraButton.setEnabled(!isBypassed); // <<< Optionally disable reset button when bypassed
+    // General enabled state for labels that are always active (like bypass label)
+    presetLabel.setColour(juce::Label::textColourId,Palette::Foreground);
+    // bypassLabel.setEnabled(true); // Bypass label itself is always enabled
+    // bypassLabel.setColour(juce::Label::textColourId, Palette::Foreground);
+    
 }
+

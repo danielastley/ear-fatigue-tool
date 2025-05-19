@@ -74,7 +74,7 @@ private:
 
     // Raw pointers to atomic parameter values for efficient real-time access
     // Initialized in the constructor after 'parameters' is created.
-    std::atomic<float>* bypassParam = nullptr;
+    // std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* presetParam = nullptr;
     std::atomic<float>* peakParam   = nullptr; // Reports instantaneous peak
     std::atomic<float>* lraParam   = nullptr; // Reports long-term LRA
@@ -85,13 +85,18 @@ private:
     LoudnessMeter loudnessMeter; // Temp test
     
     // State for periodic updates (e.g., once per second)
-    double internalSampleRate = 44100.;
-    int samplesUntilLraUpdate = 0;
+    double internalSampleRate = 0.0; // Set in prepareToPlay
+    int samplesUntilLraUpdate = 0; // For periodic LRA fetching from meter
+    
+    // New Member Variable
+    std::atomic<int> samplesProcessedSinceReset {0}; // Counter for "Measuring" state duration
     
     // Results (atomic for thread-safe reading by editor timer)
     std::atomic<float> currentPeak { ParameterDefaults::peak};
-    std::atomic<float> currentGlobalLRA { ParameterDefaults::lra }; // LRA from libebur128
-    std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Bypassed };
+    std::atomic<float> currentGlobalLRA { 0.0f }; // Initialize LRA to 0 or a "not yet measured state"
+    
+    // Modified initializer for currentStatus
+    std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Measuring }; // Start in Measuring state
     
     // Private Helper Methods
     void handleResetLRA();  // Method to perform the reset
