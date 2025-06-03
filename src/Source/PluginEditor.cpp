@@ -151,18 +151,35 @@ DynamicsDoctorEditor::~DynamicsDoctorEditor()
 //==============================================================================
 void DynamicsDoctorEditor::paint (juce::Graphics& g)
 {
+    //juce::Colour currentBgColour = Palette::Background; // Default background from your Constants.h
+
+    // Check if currently measuring and if the flash state is "on"
+    //if (processorRef.getCurrentStatus() == DynamicsStatus::Measuring && isFlashingStateOn)
+   // {
+        // Use a distinct color for the "on" flash state of the background
+        // Example: A slightly transparent version of your "Reduced" (Amber/Orange) color
+        // Adjust alpha and color to your preference.
+     //   currentBgColour = Palette::Reduced.withAlpha(0.25f); // Dim amber/orange flash
+                                                            // Or juce::Colours::yellow.withAlpha(0.15f)
+   // }
     
     g.fillAll (Palette::Background);
-    auto bounds = getLocalBounds();
-    auto topAreaHeight = bounds.getHeight() * 0.55f; // adjusted
-    auto lightArea = bounds.removeFromTop(static_cast<int>(topAreaHeight)).reduced(20);
-    g.setColour(Palette::Foreground.withAlpha(0.1f)); // Use palette colour
-    g.drawRoundedRectangle(lightArea.toFloat(), 5.0f, 2.0f);
-    // Draw separator line below traffic light area
-    g.setColour(Palette::Foreground.withAlpha(0.2f)); // Use palette colour
-    g.drawLine(static_cast<float>(bounds.getX()), topAreaHeight, static_cast<float>(bounds.getRight()), topAreaHeight, 1.0f);
-}
 
+    // --- Your existing drawing code for other elements ---
+    // You might need to adjust the alpha/colors of these subsequent drawings
+    // if the flashing background makes them hard to see.
+    auto bounds = getLocalBounds();
+    auto topAreaHeight = bounds.getHeight() * 0.55f;
+    auto lightArea = bounds.removeFromTop(static_cast<int>(topAreaHeight)).reduced(20);
+    
+    // Revert alpha or set to your preferred non-flashing alpha
+    g.setColour(Palette::Foreground.withAlpha(0.1f)); // Your original/preferred alpha
+    g.drawRoundedRectangle(lightArea.toFloat(), 5.0f, 2.0f);
+    
+    g.setColour(Palette::Foreground.withAlpha(0.2f)); // Your original/preferred alpha
+    g.drawLine(static_cast<float>(bounds.getX()), topAreaHeight, static_cast<float>(bounds.getRight()), topAreaHeight, 1.0f);
+    // --- End of existing drawing code ---
+}
 void DynamicsDoctorEditor::resized()
 {
     // Layout the positions and sizes of child components within the editor bounds.
@@ -254,97 +271,196 @@ void DynamicsDoctorEditor::comboBoxChanged (juce::ComboBox* comboBoxThatHasChang
 
 //==============================================================================
 // Timer Callback (Essential for polling processor analysis results)
+// In PluginEditor.cpp
 void DynamicsDoctorEditor::timerCallback()
 {
+    DynamicsStatus currentProcStatus = processorRef.getCurrentStatus();
+
+    if (currentProcStatus == DynamicsStatus::Measuring)
+    {
+        measuringFlashCounter++;
+        // If your timer is 15Hz:
+        // Old: >= 4  -> toggle every ~266ms -> ~0.5s per full flash cycle
+        // New: >= 8  -> toggle every ~533ms -> ~1.0s per full flash cycle
+        if (measuringFlashCounter >= 8) // <<< CHANGED FROM 4 (or your previous value) TO 8
+        {
+            isFlashingStateOn = !isFlashingStateOn;
+            measuringFlashCounter = 0;
+            // No need to call repaint() here if only label colors are changing.
+            // JUCE Labels usually repaint themselves when their text or color changes.
+            // If the background flash was removed, repaint() for that is no longer needed here.
+        }
+    }
+    else
+    {
+        // No need to call repaint() here if the background flash was removed.
+        // isFlashingStateOn is reset, and updateUIStatus() will fix label colors.
+        if (isFlashingStateOn)
+        {
+            isFlashingStateOn = false;
+        }
+        measuringFlashCounter = 0;
+    }
+
     updateUIStatus();
 }
-
 
 //==============================================================================
 // Private Helper Function to Update UI Elements
 void DynamicsDoctorEditor::updateUIStatus()
 {
-    auto status = processorRef.getCurrentStatus();
-    trafficLight.setStatus(status); // Your TrafficLightComponent handles ::Measuring based on Constants.h
-    statusLabel.setText(getStatusMessage(status), juce::dontSendNotification);
-    statusLabel.setColour(juce::Label::textColourId, getStatusColour(status));
+    // 1. Get the current status from the processor
+    DynamicsStatus currentProcStatus = processorRef.getCurrentStatus();
 
-    // const bool isBypassed = (status == DynamicsStatus::Bypassed);
-    const bool isPluginConsideredActive = true; // Plugin is always active unless host bypasses
-    const bool isMeasuring = (status == DynamicsStatus::Measuring);
+    // 2. Update elements that directly reflect the status enum from Constants.h
+    //    (getStatusMessage and getStatusColour should handle the ::Measuring case for base text/color)
+    trafficLight.setStatus(currentProcStatus); // Assumes TrafficLightComponent handles ::Measuring display
+    statusLabel.setText(getStatusMessage(currentProcStatus), juce::dontSendNotification);
+    
+    // Set a default/base color for statusLabel, which might be overridden if flashing
+    juce::Colour baseStatusLabelColour = getStatusColour(currentProcStatus);
+    statusLabel.setColour(juce::Label::textColourId, baseStatusLabelColour);
 
-    //if (isBypassed)
-    //{
-     //    peakValueLabel.setVisible(false);
-       //  lraValueLabel.setVisible(false);
-       //  presetInfoLabel.setVisible(false);
-       //  presetSelector.setEnabled(false);
-        // presetLabel.setEnabled(false);
-        // resetLraButton.setEnabled(false);
-    // }
-    if (isMeasuring)
+
+    // 3. Determine boolean flags for convenience
+    const bool isBypassed = (currentProcStatus == DynamicsStatus::Bypassed);
+    const bool isCurrentlyMeasuring = (currentProcStatus == DynamicsStatus::Measuring);
+
+    // 4. Handle UI visibility, text, and colors based on the determined state
+
+    // ========================
+    // === A. BYPASSED STATE ===
+    // ========================
+    if (isBypassed)
     {
-        peakValueLabel.setText("Peak: Receiving...", juce::dontSendNotification); // Or "--- dBFS"
-        lraValueLabel.setText("LRA: Measuring...", juce::dontSendNotification);
-        // Optionally show preset info even while measuring
+        peakValueLabel.setVisible(false);
+        lraValueLabel.setVisible(false);
+        presetInfoLabel.setVisible(false);
+
+        presetSelector.setEnabled(false);
+        presetLabel.setEnabled(false);
+        resetLraButton.setEnabled(false);
+
+        presetLabel.setColour(juce::Label::textColourId, Palette::DisabledText);
+        // Ensure lraValueLabel and statusLabel are not using flashing colors
+        lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.7f)); // Normal LRA color or a muted one
+        // statusLabel color already set by getStatusColour(DynamicsStatus::Bypassed)
+    }
+    // =================================
+    // === B. CURRENTLY MEASURING STATE ===
+    // =================================
+    else if (isCurrentlyMeasuring)
+    {
+        // --- <<< UPDATE PEAK VALUE LABEL TO SHOW LIVE PEAK >>> ---
+                auto peakParamPtr = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID()); // Use your .getParamID()
+                if (peakParamPtr != nullptr)
+                {
+                    peakValueLabel.setText ("Peak: " + juce::String(peakParamPtr->load(), 1) + " dBFS", juce::dontSendNotification);
+                } else {
+                    // Fallback if parameter somehow not found (shouldn't happen with good setup)
+                    peakValueLabel.setText("Peak: --- dBFS", juce::dontSendNotification);
+                }
+        // --- <<< END PEAK VALUE LABEL UPDATE >>> ---
+        lraValueLabel.setText("Loudness Range (LRA): Measuring...", juce::dontSendNotification); // Text content is fixed
+
+        // --- FLASH LRA VALUE LABEL & STATUS LABEL TEXT COLOR ---
+        if (isFlashingStateOn) // isFlashingStateOn is toggled by timerCallback
+        {
+            // "On" state of the flash - use a prominent color
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Reduced); // Example: Amber/Orange
+            statusLabel.setColour(juce::Label::textColourId, Palette::Reduced);   // Flash status label too
+        }
+        else
+        {
+            // "Off" state of the flash - use a dimmer/default "Measuring" color
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.5f));
+            // statusLabel color is already set to its base "Measuring" color from getStatusColour() above
+            // If getStatusColour(DynamicsStatus::Measuring) is Palette::Secondary.withAlpha(0.6f),
+            // this 'else' ensures it stays that way during the "off" part of the flash.
+            // Or, be explicit if you want a different "off" flash color:
+            statusLabel.setColour(juce::Label::textColourId, getStatusColour(DynamicsStatus::Measuring)); // Explicitly use the "Measuring" base color
+        }
+        // --- END FLASHING LOGIC ---
+
+        // Display preset information
         int presetIndex = presetSelector.getSelectedId() - 1;
-        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size()) {
+        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size())
+        {
             const auto& selectedPreset = presets[presetIndex];
             juce::String infoText = selectedPreset.label + " (Target LRA: ";
             infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
             infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
             presetInfoLabel.setText(infoText, juce::dontSendNotification);
-        } else {
+        }
+        else
+        {
             presetInfoLabel.setText("Select Preset", juce::dontSendNotification);
         }
 
-        peakValueLabel.setVisible(true);
-        lraValueLabel.setVisible(true);
-        presetInfoLabel.setVisible(true);
-        presetSelector.setEnabled(true); // Allow preset changes while measuring
-        presetLabel.setEnabled(true);
-        resetLraButton.setEnabled(true); // Allow reset even while measuring
-    }
-    else // Not Bypassed (always true from interal param view) and Not Measuring (Ok, Reduced, Loss)
-    {
-        auto peakParamPtr = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID());
-        if (peakParamPtr != nullptr) {
-            peakValueLabel.setText ("Peak: " + juce::String(peakParamPtr->load(), 1) + " dBFS", juce::dontSendNotification);
-        } else {
-            peakValueLabel.setText("Peak: --- dBFS", juce::dontSendNotification);
-        }
-        
-        auto lraReportingParam = valueTreeState.getRawParameterValue(ParameterIDs::lra.getParamID());
-        if (lraReportingParam != nullptr) {
-            lraValueLabel.setText ("LRA: " + juce::String(lraReportingParam->load(), 1) + " LU", juce::dontSendNotification);
-        } else {
-             lraValueLabel.setText ("LRA: --- LU", juce::dontSendNotification);
-        }
-
-        int presetIndex = presetSelector.getSelectedId() - 1;
-        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size()) {
-            // ... (your existing preset info label logic) ...
-            const auto& selectedPreset = presets[presetIndex];
-            juce::String infoText = selectedPreset.label + " (Target LRA: ";
-            infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
-            infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
-            presetInfoLabel.setText (infoText, juce::dontSendNotification);
-        } else {
-            presetInfoLabel.setText ("Invalid Preset Selected", juce::dontSendNotification);
-        }
-
+        // Set visibility and enabled states
         peakValueLabel.setVisible(true);
         lraValueLabel.setVisible(true);
         presetInfoLabel.setVisible(true);
         presetSelector.setEnabled(true);
         presetLabel.setEnabled(true);
         resetLraButton.setEnabled(true);
+        presetLabel.setColour(juce::Label::textColourId, Palette::Foreground); // Normal color
+    }
+    // =====================================================
+    // === C. ACTIVE STATE (Ok, Reduced, Loss) ===
+    // =====================================================
+    else
+    {
+        // Restore LRA VALUE LABEL and STATUS LABEL COLOR to their normal, non-flashing state
+        // statusLabel color already set by getStatusColour(currentProcStatus) for Ok/Reduced/Loss.
+        lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.7f)); // Your normal LRA label color
+
+        // Display actual Peak value
+        auto peakParamPtr = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID()); // Use your .getParamID()
+        if (peakParamPtr != nullptr)
+        {
+            peakValueLabel.setText ("Peak: " + juce::String(peakParamPtr->load(), 1) + " dBFS", juce::dontSendNotification);
+        } else {
+            peakValueLabel.setText("Peak: --- dBFS", juce::dontSendNotification);
+        }
+        
+        // Display actual LRA value
+        auto lraReportingParam = valueTreeState.getRawParameterValue(ParameterIDs::lra.getParamID()); // Use your .getParamID()
+        if (lraReportingParam != nullptr) {
+            lraValueLabel.setText ("LRA: " + juce::String(lraReportingParam->load(), 1) + " LU", juce::dontSendNotification);
+        } else {
+             lraValueLabel.setText ("Loudness Range (LRA): --- LU", juce::dontSendNotification);
+        }
+
+        // Display preset information
+        int presetIndex = presetSelector.getSelectedId() - 1;
+        if (presetIndex >= 0 && static_cast<size_t>(presetIndex) < presets.size())
+        {
+            const auto& selectedPreset = presets[presetIndex];
+            juce::String infoText = selectedPreset.label + " (Target LRA: ";
+            infoText += juce::String(selectedPreset.targetLraMin, 1) + " LU - ";
+            infoText += juce::String(selectedPreset.targetLraMax, 1) + " LU)";
+            presetInfoLabel.setText (infoText, juce::dontSendNotification);
+        }
+        else
+        {
+            presetInfoLabel.setText ("Invalid Preset Selected", juce::dontSendNotification);
+        }
+
+        // Set visibility and enabled states
+        peakValueLabel.setVisible(true);
+        lraValueLabel.setVisible(true);
+        presetInfoLabel.setVisible(true);
+        presetSelector.setEnabled(true);
+        presetLabel.setEnabled(true);
+        resetLraButton.setEnabled(true);
+        presetLabel.setColour(juce::Label::textColourId, Palette::Foreground); // Normal color
     }
 
-    // General enabled state for labels that are always active (like bypass label)
-    presetLabel.setColour(juce::Label::textColourId,Palette::Foreground);
-    // bypassLabel.setEnabled(true); // Bypass label itself is always enabled
-    // bypassLabel.setColour(juce::Label::textColourId, Palette::Foreground);
-    
+    // 5. Handle elements that are always active or have simple enable/disable states
+    //    (Bypass label itself is always enabled, its text doesn't change)
+    bypassLabel.setEnabled(true);
+    bypassLabel.setColour(juce::Label::textColourId, Palette::Foreground);
+    // The bypassButton's visual state (toggled or not) is handled by its bypassAttachment.
 }
 

@@ -57,9 +57,11 @@ private:
     TrafficLightComponent trafficLight;
     juce::Label statusLabel       { "statusLabel", "Status:" };
     juce::ComboBox presetSelector { "presetSelector" };
+    
+
     juce::Label presetLabel       { "presetLabel", "Preset:" };
     // juce::ToggleButton bypassButton { "bypassButton" };
-    // juce::Label bypassLabel       { "bypassLabel", "Bypass" };
+    juce::Label bypassLabel       { "bypassLabel", "Bypass" };
 
     juce::Label peakValueLabel    { "peakValueLabel", "-inf dBFS" }; // Default text
     juce::Label lraValueLabel    { "lraValueLabel", "0.0 LU" }; // Changed default text for clarity
@@ -75,6 +77,8 @@ private:
     // std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraButtonAttachment;
    
+    bool isFlashingStateOn = false;
+      int measuringFlashCounter = 0; // To control flash speed relative to timer
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorEditor)
