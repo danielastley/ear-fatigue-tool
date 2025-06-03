@@ -6,6 +6,8 @@
 #include <algorithm> // For std::sort, std::max
 #include <limits>   // For std::numeric_limits
 
+static const float LRA_MEASURING_DURATION_SECONDS = 12.0f; // Let's pick 12 seconds (between 10-15)
+
 //==============================================================================
 DynamicsDoctorProcessor::DynamicsDoctorProcessor()
      : AudioProcessor (BusesProperties()
@@ -162,6 +164,8 @@ void DynamicsDoctorProcessor::prepareToPlay (double newSampleRate, int samplesPe
 {
     DBG("--- PREPARE TO PLAY ---");
     internalSampleRate = newSampleRate;
+    DBG("prepareToPlay - internalSampleRate ACTUALLY SET TO: " << internalSampleRate
+           << ", samplesPerBlock: " << samplesPerBlock);
     // samplesUntilLraUpdate setup below
 
     int numChannelsForMeter = getTotalNumOutputChannels();
@@ -207,13 +211,13 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::ignoreUnused(midiMessages);
     
     // DBG for overall processBlock entry and key states
-      //  DBG("PB: Entry. SamplesIn: " << buffer.getNumSamples()
-      //      << ", SR: " << internalSampleRate
-        //    << ", Status: " << static_cast<int>(currentStatus.load()) // Status: 0=Ok, 1=Reduced, 2=Loss, 3=Bypassed, 4=Measuring
-         //   << ", SamplesSinceReset: " << samplesProcessedSinceReset.load()
-          //  << ", SamplesUntilLRAUpdate: " << samplesUntilLraUpdate);
+    //  DBG("PB: Entry. SamplesIn: " << buffer.getNumSamples()
+    //      << ", SR: " << internalSampleRate
+    //    << ", Status: " << static_cast<int>(currentStatus.load()) // Status: 0=Ok, 1=Reduced, 2=Loss, 3=Bypassed, 4=Measuring
+    //   << ", SamplesSinceReset: " << samplesProcessedSinceReset.load()
+    //  << ", SamplesUntilLRAUpdate: " << samplesUntilLraUpdate);
     
-    
+   
     // Check if the sample rate is valid before proceeding
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -221,119 +225,130 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
     
-    // --- All Bypass Logic Removed from here ---
-    // const bool bypassed = (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false; // Default to not bypassed if param somehow null
+    // --- Add a check for buffer activity ---
+    bool isAudioPresentInBlock = false;
+    for (int ch = 0; ch < totalNumInputChannels; ++ch)
+    {
+        if (buffer.getMagnitude(ch, 0, buffer.getNumSamples()) > 0.00001f) // Small threshold
+        {
+            isAudioPresentInBlock = true;
+            break;
+        }
+    }
     
-    // if (bypassed)
-    // {
-        // if (currentStatus.load() != DynamicsStatus::Bypassed)
-        // {
-         //    currentStatus.store(DynamicsStatus::Bypassed);
-            // Optionally rest LRA values to a default when bypassed, or let them freeze
-            // currentGlobalLRA.store(ParameterDefaults::lra);
+    
+    
+    // --- All Bypass Logic ---
+    const bool bypassed = (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false;
+
+    if (bypassed)
+    {
+        if (currentStatus.load() != DynamicsStatus::Bypassed)
+        {
+            currentStatus.store(DynamicsStatus::Bypassed);
+            // currentGlobalLRA.store(ParameterDefaults::lra); // Or some other indicator
+            // if (lraParam) lraParam->store(currentGlobalLRA.load());
+            DBG("PROCESSOR::processBlock - Entered Bypassed state.");
+        }
+        return; // IMPORTANT: Early exit if bypassed
+    }
+    
+    // If we were bypassed (but are no longer, due to the 'if (bypassed)' check above)
+        // or if it's the very first run after prepareToPlay and status is still Measuring.
+        if (currentStatus.load() == DynamicsStatus::Bypassed)
+        {
+            DBG("PROCESSOR::processBlock - Transitioning FROM Bypassed state (or initial load). Entering Measuring state.");
+            // Re-initialize meter to clear any old state from before bypass
+            // Use actual current sample rate and block size if available
+            double rateForPrepare = (internalSampleRate > 0.0) ? internalSampleRate : 44100.0;
+            int chansForPrepare = (getTotalNumOutputChannels() > 0) ? getTotalNumOutputChannels() : 2;
+            int blockForPrepare = (getBlockSize() > 0) ? getBlockSize() : 512;
             
-           // currentPeak.store(ParameterDefaults::lra); // Reset LRA to default
-           // if (lraParam) lraParam->store(currentGlobalLRA.load()); // Update APVTS param
-       // }
-        // return; // Keep the early return for bypassed state if you hardcode `bypassed`
-   // }
-       
-    // If we were bypassed and now we are not, switch to Measuring
-    // if (currentStatus.load() == DynamicsStatus::Bypassed)  // Coming out of bypass
-    // {
-     //   DBG("ProcessBlock: Coming out of bypass. Resetting LRA and peak.");
-        // Effectively do a soft reset of LRA for a fresh start
-        // This ensures LRA doesn't jump from an old value.
-        // Option 1: Full meter reset
-        // handleResetLRA(); // This will set status to Measuring and reset samplesProcessedSinceReset
-        // Option 2: Soft reset of counters and status (if handleResetLRA feels too heavy here)
-        // loudnessMeter.prepare(internalSampleRate, getTotalNumOutputChannels() > 0 ? getTotalNumOutputChannels() : 2, getBlockSize() > 0 ? getBlockSize() : 512); // Re-init meter
-        // currentGlobalLRA.store(0.0f);
-       //  if (lraParam) lraParam->store(0.0f);
-       // samplesProcessedSinceReset.store(0); // Reset counter when coming out of bypass
-       // samplesUntilLraUpdate = 0;         // Trigger LRA update soon
-        //currentStatus.store(DynamicsStatus::Measuring);
-      //
-        // DBG("ProcessBlock: Coming out of bypass. Status set to Measuring.");
-        
+            loudnessMeter.prepare(rateForPrepare, chansForPrepare, blockForPrepare);
+            
+            currentGlobalLRA.store(0.0f);
+            if (lraParam) lraParam->store(0.0f);
+            samplesProcessedSinceReset.store(0);
+            samplesUntilLraUpdate = 0; // Trigger LRA update soon
+            currentStatus.store(DynamicsStatus::Measuring); // Explicitly set to Measuring
+        }
+    
     // --- Peak Tracking --- (This part uses `currentPeak` (atomic) so it's mostly fine)
     float blockMax = 0.0f;
     for (int ch = 0; ch < totalNumInputChannels; ++ch) {
-            blockMax = std::max(blockMax, buffer.getMagnitude(ch, 0, buffer.getNumSamples()));
+        blockMax = std::max(blockMax, buffer.getMagnitude(ch, 0, buffer.getNumSamples()));
     }
     currentPeak.store(juce::Decibels::gainToDecibels(blockMax, -std::numeric_limits<float>::infinity()));
-        
+    
     if (peakParam != nullptr) peakParam->store(currentPeak);
-        
+    
     // --- Feed audio to LoudnessMeter --- (Assumed fine for now)
     loudnessMeter.processBlock(buffer); // Meter is always processing if not bypassed
     
     // DBG("ProcessBlock - NumSamples: " << buffer.getNumSamples()
-     //   << ", Current Status: " << static_cast<int>(currentStatus.load())
-      //  << ", Samples Processed: " << samplesProcessedSinceReset.load());
-        
-    if (currentStatus.load() == DynamicsStatus::Measuring) // Only add to counter if measuring
-            {
-                samplesProcessedSinceReset.fetch_add(buffer.getNumSamples());
-            }
-
-    // --- Periodic LRA Update --- (This part is a bit more complex)
-    if (buffer.getNumSamples() > 0) { // Only decrement if processing samples
-        samplesUntilLraUpdate -= buffer.getNumSamples();
-    }
-
-    if (samplesUntilLraUpdate <= 0) // Condition A: Time to update LRA values
+    //   << ", Current Status: " << static_cast<int>(currentStatus.load())
+    //  << ", Samples Processed: " << samplesProcessedSinceReset.load());
+    
+    // --- MODIFIED INCREMENT FOR samplesProcessedSinceReset ---
+    if (currentStatus.load() == DynamicsStatus::Measuring && isAudioPresentInBlock)
     {
+        samplesProcessedSinceReset.fetch_add(buffer.getNumSamples());
+    }
+    
+    // --- Periodic LRA Fetch & Status Update ---
+    samplesUntilLraUpdate -= buffer.getNumSamples();
+    if (samplesUntilLraUpdate <= 0)
+    {
+        // Ensure internalSampleRate is valid, default if not (e.g. if prepareToPlay hasn't run)
         double rate = (internalSampleRate > 0.0) ? internalSampleRate : 44100.0;
-        // Note: samplesUntilLraUpdate is reset at the END of this block now.
-        DBG("PB: LRA Update Block. SamplesUntilLRAUpdate was <= 0."); // Removed resetting DBG here for clarity
-
-        const float lraMeasuringDurationSeconds = 6.0f;
-        const int minSamplesForReliableLRA = static_cast<int>(rate * lraMeasuringDurationSeconds);
-        DBG("PB: minSamplesForReliableLRA: " << minSamplesForReliableLRA << ", current SamplesSinceReset: " << samplesProcessedSinceReset.load());
-
+        
+        // Reset the timer for the next update (approx. 1 second)
+        // It's good to reset it relatively early in this block.
+        samplesUntilLraUpdate += static_cast<int>(rate);
+        
+        DBG("PROCESSOR::processBlock - LRA Update Triggered.");
+        
         // ALWAYS get the current LRA from the meter
-        float newLRA = loudnessMeter.getLoudnessRange(); // This calls your LoudnessMeter method
-        if (std::isinf(newLRA) || std::isnan(newLRA) || newLRA < 0)
+        float newLRA = loudnessMeter.getLoudnessRange();
+        if (std::isinf(newLRA) || std::isnan(newLRA) || newLRA < 0) // LRA is typically non-negative
         {
-            // It's often better to let newLRA be what the meter returns initially,
-            // and handle display of "invalid" values in the UI if needed.
-            // Forcing to 0.0f here might hide issues in the meter.
-            // Let's keep it for now but be aware.
-            DBG("PB: newLRA from meter was inf, nan, or <0. Clamping to 0.0f. Original: " << newLRA);
-            newLRA = 0.0f;
+            DBG("PROCESSOR::processBlock - newLRA from meter was invalid (inf, nan, or <0). Original: " << newLRA << ". Clamping to 0.0f.");
+            newLRA = 0.0f; // Handle invalid LRA from meter
         }
-        currentGlobalLRA.store(newLRA);
+        currentGlobalLRA.store(newLRA); // Store the actual current LRA
         if (lraParam != nullptr)
         {
-            lraParam->store(newLRA);
+            lraParam->store(newLRA); // Update APVTS parameter with actual current LRA
         }
-        DBG("PB: Fetched newLRA: " << newLRA << ". Stored to currentGlobalLRA & lraParam.");
-
-
-        if (currentStatus.load() == DynamicsStatus::Measuring) // Condition B: Currently in Measuring UI state
+        DBG("PROCESSOR::processBlock - Fetched newLRA: " << newLRA << ". Stored to currentGlobalLRA & lraParam.");
+        
+        // Now, determine if the UI should transition out of the "Measuring" state
+        // LRA_MEASURING_DURATION_SECONDS is the const float defined at the top of the file
+        const int minSamplesForReliableLRA = static_cast<int>(rate * LRA_MEASURING_DURATION_SECONDS);  // Uses 12.0f const
+        
+        if (currentStatus.load() == DynamicsStatus::Measuring)
         {
-            DBG("PB: Currently in Measuring State. Samples processed: " << samplesProcessedSinceReset.load());
-            if (samplesProcessedSinceReset.load() >= minSamplesForReliableLRA) // Condition C: Enough samples processed
+            DBG("PROCESSOR::processBlock - Currently in Measuring State. Samples processed: " << samplesProcessedSinceReset.load() << " / " << minSamplesForReliableLRA);
+            if (samplesProcessedSinceReset.load() >= minSamplesForReliableLRA)
             {
-                DBG("PB: Measuring complete. Transitioning state based on newLRA: " << newLRA);
-                updateStatusBasedOnLRA(newLRA); // Transition out of Measuring
+                DBG("PROCESSOR::processBlock - Measuring complete. Transitioning to active status based on newLRA: " << newLRA);
+                updateStatusBasedOnLRA(newLRA); // Transition out of Measuring and set Ok/Reduced/Loss
             }
             else
             {
-                DBG("ProcessBlock: Still measuring. Samples processed: " << samplesProcessedSinceReset.load() << " / " << minSamplesForReliableLRA
-                        << ". Current LRA being calculated: " << newLRA); // newLRA is from loudnessMeter.getLoudnessRange()
-                // Status remains Measuring. UI shows "Measuring..."
-                // lraParam has been updated with the current (possibly unstable) newLRA.
+                // Still measuring. Status remains Measuring.
+                // UI will show "Measuring..." for status, traffic light reflects "Measuring".
+                // lraParam has been updated with the current (possibly unstable/still developing) newLRA.
+                // The UI can choose to display this live LRA or a placeholder like "Measuring..." for the LRA value itself.
+                DBG("PROCESSOR::processBlock - Still measuring. LRA value is " << newLRA << " but UI status is Measuring.");
             }
         }
-        else // Already in Ok, Reduced, Loss (not Bypassed, not Measuring)
+        else // Already in a stable state (Ok, Reduced, Loss - not Bypassed, not Measuring)
         {
-            DBG("PB: Not in Measuring state. Updating status with newLRA: " << newLRA);
+            DBG("PROCESSOR::processBlock - Not in Measuring state. Updating status with newLRA: " << newLRA);
             updateStatusBasedOnLRA(newLRA); // Update status with ongoing LRA
         }
-        samplesUntilLraUpdate = static_cast<int>(rate); // Reset here for next
-        }
+    }
 }
 
 

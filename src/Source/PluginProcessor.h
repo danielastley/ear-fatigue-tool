@@ -74,7 +74,7 @@ private:
 
     // Raw pointers to atomic parameter values for efficient real-time access
     // Initialized in the constructor after 'parameters' is created.
-    // std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* presetParam = nullptr;
     std::atomic<float>* peakParam   = nullptr; // Reports instantaneous peak
     std::atomic<float>* lraParam   = nullptr; // Reports long-term LRA
