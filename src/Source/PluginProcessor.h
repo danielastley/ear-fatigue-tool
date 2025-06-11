@@ -1,40 +1,51 @@
 #pragma once
 
+// Core JUCE modules
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <juce_dsp/juce_dsp.h> // Kept for future DSP use
-#include <juce_audio_utils/juce_audio_utils.h> // Often needed for APVTS related things
-#include <atomic> // Required for std::atomic
-#include "Constants.h" // Provides presets, ParameterIDs, DynamicStatus enum, etc.
-#include "LoudnessMeter.h" // Out C++ wrapper for libebur128
-// Forward declaration for the Parameter Layout function if needed,
-// though usually kept entirely within the .cpp or defined inline if simple.
-// If createParameterLayout is a private member function, no forward declaration needed here.
+#include <juce_dsp/juce_dsp.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+#include <atomic>
 
+// Project-specific headers
+#include "Constants.h"
+#include "LoudnessMeter.h"
 
 //==============================================================================
 /**
-    The main audio processing class for the DynamicsDoctor plugin.
-*/
+ * Main audio processing class for the DynamicsDoctor plugin.
+ * 
+ * This class handles:
+ * - Real-time audio processing and loudness analysis
+ * - Parameter management and state persistence
+ * - Communication with the plugin editor
+ * - Loudness Range (LRA) measurement and status reporting
+ * 
+ * The processor maintains a state machine that tracks the current dynamics status
+ * (Ok, Reduced, Loss, Measuring, Bypassed) based on the measured LRA values
+ * and the selected preset's thresholds.
+ */
 class DynamicsDoctorProcessor : public juce::AudioProcessor,
-                                public juce::AudioProcessorValueTreeState::Listener
+                              public juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    
     //==============================================================================
     DynamicsDoctorProcessor();
     ~DynamicsDoctorProcessor() override;
 
     //==============================================================================
+    /** Audio processing callbacks */
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     
     //==============================================================================
+    /** Plugin editor management */
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override; // Defined in CPP
+    bool hasEditor() const override;
 
     //==============================================================================
+    /** Plugin metadata and capabilities */
     const juce::String getName() const override;
     bool acceptsMidi() const override;
     bool producesMidi() const override;
@@ -42,7 +53,7 @@ public:
     double getTailLengthSeconds() const override;
 
     //==============================================================================
-    // Program management (less critical with APVTS, but required overrides)
+    /** Program/preset management */
     int getNumPrograms() override;
     int getCurrentProgram() override;
     void setCurrentProgram (int index) override;
@@ -50,59 +61,49 @@ public:
     void changeProgramName (int index, const juce::String& newName) override;
 
     //==============================================================================
+    /** State persistence */
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     //==============================================================================
-    // Public accessors for the editor
+    /** Public interface for the editor */
     juce::AudioProcessorValueTreeState& getValueTreeState();
     DynamicsStatus getCurrentStatus() const;
-    // Provide LRA value for potential display in editor
-    float getReportedLRA() const; // This will be the LRA from libebur128
+    float getReportedLRA() const;
     
-    // Callback for parameter changes, specifically for the reset button
+    /** Parameter change callback from the value tree state */
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
 private:
     //==============================================================================
-    // Manages all plugin parameters and their state
+    /** Parameter management */
     juce::AudioProcessorValueTreeState parameters;
-    
-    // Parameter Creation Helper
-    // Defined in the .cpp file, returns the layout for the APVTS constructor
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // Raw pointers to atomic parameter values for efficient real-time access
-    // Initialized in the constructor after 'parameters' is created.
-    std::atomic<float>* bypassParam = nullptr;
-    std::atomic<float>* presetParam = nullptr;
-    std::atomic<float>* peakParam   = nullptr; // Reports instantaneous peak
-    std::atomic<float>* lraParam   = nullptr; // Reports long-term LRA
-    // Pointer for the reset parameter to listen to it
-    juce::AudioParameterBool* resetLraParamObject = nullptr;
+    /** Real-time parameter access - atomic for thread safety */
+    std::atomic<float>* bypassParam = nullptr;      // Bypass state
+    std::atomic<float>* presetParam = nullptr;      // Selected preset index
+    std::atomic<float>* peakParam = nullptr;        // Instantaneous peak level in dBFS
+    std::atomic<float>* lraParam = nullptr;         // Long-term loudness range in LU
+    juce::AudioParameterBool* resetLraParamObject = nullptr;  // LRA reset trigger
     
-    // Loudness Measurement using our wrapper
-    LoudnessMeter loudnessMeter; // Temp test
+    /** Loudness analysis engine */
+    LoudnessMeter loudnessMeter;
     
-    // State for periodic updates (e.g., once per second)
-    double internalSampleRate = 0.0; // Set in prepareToPlay
-    int samplesUntilLraUpdate = 0; // For periodic LRA fetching from meter
+    /** Timing and state management */
+    double internalSampleRate = 0.0;                // Current sample rate
+    int samplesUntilLraUpdate = 0;                  // Counter for LRA update timing
+    std::atomic<int> samplesProcessedSinceReset {0}; // Samples since last LRA reset
     
-    // New Member Variable
-    std::atomic<int> samplesProcessedSinceReset {0}; // Counter for "Measuring" state duration
+    /** Analysis results - atomic for thread-safe editor access */
+    std::atomic<float> currentPeak { ParameterDefaults::peak };  // Current peak level
+    std::atomic<float> currentGlobalLRA { 0.0f };                // Current LRA value
+    std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Measuring }; // Current state
     
-    // Results (atomic for thread-safe reading by editor timer)
-    std::atomic<float> currentPeak { ParameterDefaults::peak};
-    std::atomic<float> currentGlobalLRA { 0.0f }; // Initialize LRA to 0 or a "not yet measured state"
+    /** Internal processing methods */
+    void handleResetLRA();                         // Reset LRA measurement
+    void updateStatusBasedOnLRA(float measuredLRA); // Update status based on LRA thresholds
     
-    // Modified initializer for currentStatus
-    std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Measuring }; // Start in Measuring state
-    
-    // Private Helper Methods
-    void handleResetLRA();  // Method to perform the reset
-    void updateStatusBasedOnLRA(float measuredLRA); // Takes the current LRA
-  
-
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorProcessor)
 };

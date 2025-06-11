@@ -12,26 +12,39 @@
 
 //==============================================================================
 /**
-    The editor component for the DynamicsDoctor plugin.
-    Handles UI display, user interaction, and communication with the processor.
-*/
+ * The main UI component for the DynamicsDoctor plugin.
+ * 
+ * This editor provides a user interface for:
+ * - Monitoring dynamics processing status via traffic light
+ * - Selecting and displaying preset configurations
+ * - Viewing real-time peak and LRA measurements
+ * - Controlling bypass state and LRA reset
+ * 
+ * The editor automatically updates its display based on the processor's state
+ * and provides parameter controls that are synchronized with the audio processing.
+ */
 class DynamicsDoctorEditor : public juce::AudioProcessorEditor,
                              private juce::ComboBox::Listener, // Keep private
                              private juce::Button::Listener,   // Keep private
                              private juce::Timer             // Keep private
 {
 public:
-    /** Constructor. Takes references to the processor and its Value Tree State. */
-    explicit DynamicsDoctorEditor (DynamicsDoctorProcessor&, juce::AudioProcessorValueTreeState&);
+    /**
+     * Creates a new editor component.
+     * 
+     * @param processor Reference to the audio processor
+     * @param vts Reference to the processor's parameter state manager
+     */
+    explicit DynamicsDoctorEditor (DynamicsDoctorProcessor& processor, juce::AudioProcessorValueTreeState& vts);
 
     /** Destructor. */
     ~DynamicsDoctorEditor() override;
 
     //==============================================================================
-    /** Paints the editor component. */
+    /** @internal */
     void paint (juce::Graphics&) override;
 
-    /** Called when the editor component is resized. */
+    /** @internal */
     void resized() override;
 
 private:
@@ -40,12 +53,21 @@ private:
     void comboBoxChanged (juce::ComboBox* comboBoxThatHasChanged) override;
     void buttonClicked (juce::Button* buttonThatWasClicked) override;
 
-    /** Timer callback, used to periodically poll the processor for status updates. */
+    /**
+     * Timer callback that updates the UI with current processor state.
+     * Called periodically to refresh measurements and status display.
+     */
     void timerCallback() override;
 
     //==============================================================================
     // Helper method to update UI elements based on processor status
     void updateUIStatus();
+    
+    //  HELPER METHOD DECLARATIONS
+    void updateMeasurements();
+    void updatePresetInfo();
+    void enableControls(bool enable);
+  
 
     // Reference to the processor object (required).
     DynamicsDoctorProcessor& processorRef;

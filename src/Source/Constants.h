@@ -1,176 +1,185 @@
 #pragma once
 
-// Include necessary JUCE modules and standard headers explicitly
-#include <juce_core/juce_core.h>          // For juce::String, juce::Identifier
-#include <juce_graphics/juce_graphics.h>  // For juce::Colour, juce::Colours
+// Core JUCE modules
+#include <juce_core/juce_core.h>
+#include <juce_graphics/juce_graphics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
-#include <vector>                         // For std::vector
+#include <vector>
 #include <string>
 
-//------------------------------------------------------------------------------
-// Colour Palette
-// Defines the core colours used throughout the plugin UI.
-//------------------------------------------------------------------------------
+//==============================================================================
+/**
+ * UI Color definitions for the plugin.
+ * All colors are defined with full opacity (FF prefix) unless specified otherwise.
+ */
 namespace Palette
 {
-    // Using juce::Colour::fromString is fine. Ensure alpha is specified (FF prefix for opaque).
-    const juce::Colour Primary        = juce::Colour::fromString ("FF333333"); // Dark grey background
-    const juce::Colour Secondary      = juce::Colour::fromString ("FFDDDDDD"); // Light grey foreground/text
-    const juce::Colour Ok             = juce::Colour::fromString ("FF008080"); // Teal accent
-    const juce::Colour Reduced        = juce::Colour::fromString ("FFFFA500"); // Orange accent
-    const juce::Colour Loss           = juce::Colour::fromString ("FFFF0000"); // Red accent
-    const juce::Colour Muted          = juce::Colours::grey;                    // Grey for bypassed/inactive
-    const juce::Colour DisabledText   = Muted.withAlpha(0.6f);               // Example for disabled text
+    // Main UI colors
+    const juce::Colour Primary        = juce::Colour::fromString ("FF333333"); // Main background
+    const juce::Colour Secondary      = juce::Colour::fromString ("FFDDDDDD"); // Main text/foreground
+    const juce::Colour Ok             = juce::Colour::fromString ("FF008080"); // Success state (teal)
+    const juce::Colour Reduced        = juce::Colour::fromString ("FFFFA500"); // Warning state (orange)
+    const juce::Colour Loss           = juce::Colour::fromString ("FFFF0000"); // Error state (red)
+    const juce::Colour Muted          = juce::Colours::grey;                   // Inactive state
+    const juce::Colour DisabledText   = Muted.withAlpha(0.6f);                // Disabled text
 
-    // Convenience aliases matching original naming if preferred elsewhere
+    // Legacy color aliases
     const juce::Colour Background     = Primary;
     const juce::Colour Foreground     = Secondary;
 }
 
-//------------------------------------------------------------------------------
-// Status Definition
-// Represents the different dynamic states the plugin can report.
-//------------------------------------------------------------------------------
+//==============================================================================
+/**
+ * Plugin state definitions.
+ * Represents the different dynamic range states that can be detected.
+ */
 enum class DynamicsStatus
 {
-    Ok,       // Green
-    Reduced,  // Amber
-    Loss,     // Red
-    Bypassed,
-    Measuring // New Listening State
+    Ok,       // Normal dynamic range
+    Reduced,  // Reduced dynamic range
+    Loss,     // Significant dynamic range loss
+    Bypassed, // Plugin is bypassed
+    Measuring // Currently measuring LRA
 };
 
-//------------------------------------------------------------------------------
-// Preset Definition
-// Structure holding information for each dynamic range reference standard.
-//------------------------------------------------------------------------------
+//==============================================================================
+/**
+ * Preset configuration structure.
+ * Defines the dynamic range thresholds and target ranges for different music genres.
+ */
 struct DynamicsPreset
 {
-    std::string id;         // Unique identifier string for APVTS
-    juce::String label;     // Display name for the UI in the ComboBox
+    std::string id;         // Unique identifier for parameter system
+    juce::String label;     // Display name in UI
 
-    // LRA thresholds for traffic light logic (all values in LU)
-    float lraThresholdRed;    // Below this LRA value, light is RED
-    float lraThresholdAmber;  // Below this LRA value (and >= lraThresholdRed), light is AMBER
-                              // Above or equal to this value, light is GREEN
-    // For user display/info:
-    float targetLraMin;       // The minimum LU of the genre's target range
-    float targetLraMax;       // The maximum LU of the genre's target range
+    // LRA thresholds in LU (Loudness Units)
+    float lraThresholdRed;    // Red light threshold
+    float lraThresholdAmber;  // Amber light threshold
+    float targetLraMin;       // Minimum target LRA
+    float targetLraMax;       // Maximum target LRA
 };
 
-// Define the available presets with new LRA thresholds
+//==============================================================================
+/**
+ * Predefined dynamic range presets for different music genres.
+ * Each preset defines specific LRA thresholds and target ranges.
+ */
 const std::vector<DynamicsPreset> presets = {
-    // id,         label,            lraThresholdRed, lraThresholdAmber, targetLraMin, targetLraMax
-    { "edm",       "EDM/Club",           3.0f,            3.6f,              3.0f,         8.0f },
-        { "pop_rock",  "Pop/Rock",           4.0f,            4.8f,              4.0f,         9.0f },
-        { "classical", "Classical/Acoustic", 6.0f,            7.2f,              6.0f,        22.0f }
-    };
-    
-    // The ParameterDefaults::preset might need adjustment if the default preset changes index.
+    // id,         label,            red,    amber,  min,    max
+    { "edm",       "EDM/Club",       3.0f,   3.6f,   3.0f,   8.0f },
+    { "pop_rock",  "Pop/Rock",       4.0f,   4.8f,   4.0f,   9.0f },
+    { "classical", "Classical",      6.0f,   7.2f,   6.0f,  22.0f }
+};
 
-//------------------------------------------------------------------------------
-// Parameter Definitions
-// Defines identifiers and default values for plugin parameters.
-//------------------------------------------------------------------------------
+//==============================================================================
+/**
+ * Parameter identifiers for the plugin's audio processor.
+ * Used to identify parameters in the AudioProcessorValueTreeState.
+ */
 namespace ParameterIDs
 {
-     // const juce::ParameterID bypass { "bypass", 1 }; // Use struct
-     const juce::ParameterID preset { "preset", 1 }; // Use struct
-     const juce::ParameterID peak   { "peak",   1 }; // Use struct
-     const juce::ParameterID lra    { "lra",    1 }; // Use struct
-     const juce::ParameterID resetLra { "resetLra", 1 };
+    const juce::ParameterID preset   { "preset", 1 };
+    const juce::ParameterID peak     { "peak",   1 };
+    const juce::ParameterID lra      { "lra",    1 };
+    const juce::ParameterID resetLra { "resetLra", 1 };
 }
 
-// ParameterDefaults update based on new preset list if necessary
+//==============================================================================
+/**
+ * Default values for plugin parameters.
+ * Used when initializing the plugin or resetting parameters.
+ */
 namespace ParameterDefaults
 {
-    // const bool bypass = false;
-    const int  preset = 1;
-    const float peak = -100.0f;
-    const float lra = 0.0f; // Default LRA value (e.g., a high value to start Green)
-    constexpr float LRA_MEASURING_DURATION = 6.0f; // Duration to measure LRA in seconds
+    const int  preset = 1;                    // Default to Pop/Rock preset
+    const float peak = -100.0f;               // Initial peak level
+    const float lra = 0.0f;                   // Initial LRA value
+    constexpr float LRA_MEASURING_DURATION = 6.0f; // LRA measurement period
 }
 
-//------------------------------------------------------------------------------
-// Status Helper Functions
-// Provide UI elements with appropriate colours and text based on status.
-// Defined inline as they are small and used in a header.
-//------------------------------------------------------------------------------
-inline juce::Colour getStatusColour (DynamicsStatus status)
+//==============================================================================
+/**
+ * Status-related utility functions.
+ * Provides consistent colors and messages for different plugin states.
+ */
+inline juce::Colour getStatusColour(DynamicsStatus status)
 {
     switch (status)
     {
-        case DynamicsStatus::Ok:      return Palette::Ok;       // Green
-        case DynamicsStatus::Reduced: return Palette::Reduced;  // Amber
-        case DynamicsStatus::Loss:    return Palette::Loss;     // Red
-        case DynamicsStatus::Measuring: return Palette::Secondary.withAlpha(0.6f);   // Dimmed foregroun for measuring
-        case DynamicsStatus::Bypassed:/* fallthrough */
-        default:                      return Palette::Muted; // Default case handles Bypassed and any unexpected values
+        case DynamicsStatus::Ok:        return Palette::Ok;
+        case DynamicsStatus::Reduced:   return Palette::Reduced;
+        case DynamicsStatus::Loss:      return Palette::Loss;
+        case DynamicsStatus::Measuring: return Palette::Secondary.withAlpha(0.6f);
+        case DynamicsStatus::Bypassed:  /* fallthrough */
+        default:                        return Palette::Muted;
     }
 }
 
-inline juce::String getStatusMessage (DynamicsStatus status)
+inline juce::String getStatusMessage(DynamicsStatus status)
 {
     switch (status)
     {
-        case DynamicsStatus::Ok:      return "Dynamics: OK";
-        case DynamicsStatus::Reduced: return "Dynamics: Reduced";
-        case DynamicsStatus::Loss:    return "Dynamics: Loss Risk";
-        case DynamicsStatus::Measuring: return "Measuring LRA..."; // New Listening Message
-        case DynamicsStatus::Bypassed:/* fallthrough */
-        default:                      return "Monitoring Bypassed";
+        case DynamicsStatus::Ok:        return "Dynamics: OK";
+        case DynamicsStatus::Reduced:   return "Dynamics: Reduced";
+        case DynamicsStatus::Loss:      return "Dynamics: Loss Risk";
+        case DynamicsStatus::Measuring: return "Measuring LRA...";
+        case DynamicsStatus::Bypassed:  /* fallthrough */
+        default:                        return "Monitoring Bypassed";
     }
 }
 
-//------------------------------------------------------------------------------
-// Traffic Light Helper Functions (Specific to TrafficLightComponent)
-// Provide colours and styles for the traffic light display based on status.
-//------------------------------------------------------------------------------
+//==============================================================================
+/**
+ * Traffic light display configuration and utilities.
+ * Defines visual properties and behavior of the traffic light component.
+ */
 namespace TrafficLightMetrics
 {
-    // Make constants related to the traffic light easily configurable
-    constexpr float LightBorderThickness = 2.0f; // Thinner border?
+    // Visual properties
+    constexpr float LightBorderThickness = 2.0f;
     constexpr float BypassedAlpha = 0.3f;
     constexpr float InactiveAlpha = 0.3f;
     constexpr float ActiveBorderDarkenFactor = 0.5f;
     constexpr float InactiveBackgroundBrightnessFactor = 0.2f;
     constexpr float BypassedBorderDarkenFactor = 0.3f;
 
-
-inline juce::Colour getLightColour (DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
+    /**
+     * Determines the color of a traffic light based on current plugin state.
+     * @param lightTargetStatus The status this light represents
+     * @param currentActualStatus The current plugin status
+     * @return The appropriate color for the light
+     */
+    inline juce::Colour getLightColour(DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
     {
         if (currentActualStatus == DynamicsStatus::Bypassed)
-            return Palette::Muted.withAlpha (BypassedAlpha);
+            return Palette::Muted.withAlpha(BypassedAlpha);
         
         if (currentActualStatus == DynamicsStatus::Measuring)
-        {
-            // Example: All lights dim/off, or a specific "measuring" pattern
-            // For simplicity here, let's make them look like "inactive" when measuring
             return Palette::Background.brighter(InactiveBackgroundBrightnessFactor);
-        }
 
         if (currentActualStatus == lightTargetStatus)
-            return getStatusColour (lightTargetStatus);
+            return getStatusColour(lightTargetStatus);
 
         return Palette::Background.brighter(InactiveBackgroundBrightnessFactor);
     }
 
-    // getLightBorderThickness remains the same
-
-    inline juce::Colour getLightBorderColour (DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
+    /**
+     * Determines the border color of a traffic light based on current plugin state.
+     * @param lightTargetStatus The status this light represents
+     * @param currentActualStatus The current plugin status
+     * @return The appropriate border color for the light
+     */
+    inline juce::Colour getLightBorderColour(DynamicsStatus lightTargetStatus, DynamicsStatus currentActualStatus)
     {
-         if (currentActualStatus == DynamicsStatus::Bypassed)
+        if (currentActualStatus == DynamicsStatus::Bypassed)
             return Palette::Muted.darker(BypassedBorderDarkenFactor);
 
-         if (currentActualStatus == DynamicsStatus::Measuring)
-         {
-             // Example: Same border as inactive
-             return Palette::Foreground.withAlpha(InactiveAlpha);
-         }
+        if (currentActualStatus == DynamicsStatus::Measuring)
+            return Palette::Foreground.withAlpha(InactiveAlpha);
 
         if (currentActualStatus == lightTargetStatus)
-            return getStatusColour (lightTargetStatus).darker(ActiveBorderDarkenFactor);
+            return getStatusColour(lightTargetStatus).darker(ActiveBorderDarkenFactor);
 
         return Palette::Foreground.withAlpha(InactiveAlpha);
     }
-} // namespace TrafficLightMetrics
+}
