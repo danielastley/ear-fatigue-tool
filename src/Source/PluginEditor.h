@@ -82,7 +82,6 @@ private:
     
 
     juce::Label presetLabel       { "presetLabel", "Preset:" };
-    // juce::ToggleButton bypassButton { "bypassButton" };
     juce::Label bypassLabel       { "bypassLabel", "Bypass" };
 
     juce::Label peakValueLabel    { "peakValueLabel", "-inf dBFS" }; // Default text
@@ -96,11 +95,12 @@ private:
     // --- Parameter Attachments ---
     // Use RAII to manage the connection between UI elements and parameters.
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttachment;
-    // std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraButtonAttachment;
    
-    bool isFlashingStateOn = false;
-      int measuringFlashCounter = 0; // To control flash speed relative to timer
+    /** Warning state */
+    bool isFlashingStateOn { false };
+    double flashTimer { 0.0 };
+    static constexpr double FLASH_INTERVAL = 0.5; // Half second flash interval
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorEditor)

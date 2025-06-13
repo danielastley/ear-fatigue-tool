@@ -39,7 +39,8 @@ enum class DynamicsStatus
     Reduced,  // Reduced dynamic range
     Loss,     // Significant dynamic range loss
     Bypassed, // Plugin is bypassed
-    Measuring // Currently measuring LRA
+    Measuring, // Currently measuring LRA
+    AwaitingAudio // Waiting for audio signal
 };
 
 //==============================================================================
@@ -110,6 +111,7 @@ inline juce::Colour getStatusColour(DynamicsStatus status)
         case DynamicsStatus::Reduced:   return Palette::Reduced;
         case DynamicsStatus::Loss:      return Palette::Loss;
         case DynamicsStatus::Measuring: return Palette::Secondary.withAlpha(0.6f);
+        case DynamicsStatus::AwaitingAudio: return Palette::Ok; // Green for awaiting audio
         case DynamicsStatus::Bypassed:  /* fallthrough */
         default:                        return Palette::Muted;
     }
@@ -123,6 +125,7 @@ inline juce::String getStatusMessage(DynamicsStatus status)
         case DynamicsStatus::Reduced:   return "Dynamics: Reduced";
         case DynamicsStatus::Loss:      return "Dynamics: Loss Risk";
         case DynamicsStatus::Measuring: return "Measuring LRA...";
+        case DynamicsStatus::AwaitingAudio: return "Awaiting Audio...";
         case DynamicsStatus::Bypassed:  /* fallthrough */
         default:                        return "Monitoring Bypassed";
     }

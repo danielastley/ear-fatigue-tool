@@ -34,7 +34,7 @@ public:
 
     //==============================================================================
     /** Audio processing callbacks */
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void prepareToPlay (double newSampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
@@ -71,6 +71,10 @@ public:
     DynamicsStatus getCurrentStatus() const;
     float getReportedLRA() const;
     
+    // <<< ADD THESE NEW PUBLIC GETTERS >>>
+    bool isCurrentlyBypassed() const;
+    bool isEarFatigueWarningActive() const; // Assuming this is the getter for isEarFatigueWarning
+    
     /** Parameter change callback from the value tree state */
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
@@ -100,9 +104,24 @@ private:
     std::atomic<float> currentGlobalLRA { 0.0f };                // Current LRA value
     std::atomic<DynamicsStatus> currentStatus { DynamicsStatus::Measuring }; // Current state
     
+    /** Ear fatigue monitoring */
+    std::atomic<double> timeBelowThreshold { 0.0 };              // Total time spent below 3.5 LU
+    std::atomic<double> timeSinceLastAudio { 0.0 };              // Time since last audio signal
+    std::atomic<double> totalMeasurementTime { 0.0 };            // Total time with audio present
+    std::atomic<bool> isEarFatigueWarning { false };             // Whether warning is active
+    std::atomic<bool> waitingForNextAudio { false };             // Flag to indicate we're waiting for next audio signal
+    std::atomic<bool> isInitialMeasuringPhase { true };  // Flag to track initial measuring phase
+    static constexpr double EAR_FATIGUE_THRESHOLD = 3.5;         // LU threshold for warning
+    static constexpr double EAR_FATIGUE_DURATION = 20.0;         // 20 seconds (for testing)
+    static constexpr double AUDIO_TIMEOUT = 300.0;               // 5 minutes in seconds
+    static constexpr double THRESHOLD_PERCENTAGE = 0.8;          // 80% threshold for warning
+    
     /** Internal processing methods */
     void handleResetLRA();                         // Reset LRA measurement
     void updateStatusBasedOnLRA(float measuredLRA); // Update status based on LRA thresholds
+    
+    /** New member variable for no-audio timeout */
+    std::atomic<double> noAudioTimeout { 0.0 }; // Time since last audio signal for timeout
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicsDoctorProcessor)

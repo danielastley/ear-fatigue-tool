@@ -98,7 +98,15 @@ DynamicsDoctorEditor::~DynamicsDoctorEditor()
 void DynamicsDoctorEditor::paint (juce::Graphics& g)
 {
     // Draw background
-    g.fillAll (Palette::Background);
+    if (isFlashingStateOn && processorRef.isEarFatigueWarningActive())
+    {
+        // Flash solid red background during warning
+        g.fillAll(Palette::Loss); // Use solid red instead of orange
+    }
+    else
+    {
+        g.fillAll(Palette::Background);
+    }
 
     // Draw UI sections
     auto bounds = getLocalBounds();
@@ -190,43 +198,74 @@ void DynamicsDoctorEditor::comboBoxChanged (juce::ComboBox* comboBoxThatHasChang
 // In PluginEditor.cpp
 void DynamicsDoctorEditor::timerCallback()
 {
-    // Handle measuring state animation
-    DynamicsStatus currentProcStatus = processorRef.getCurrentStatus();
-
-    if (currentProcStatus == DynamicsStatus::Measuring)
+    // Update UI status
+    updateUIStatus();
+    
+    // Handle flashing states
+    auto* processor = dynamic_cast<DynamicsDoctorProcessor*>(getAudioProcessor());
+    if (processor != nullptr)
     {
-        measuringFlashCounter++;
-        if (measuringFlashCounter >= 8)  // Toggle every ~533ms at 15Hz
+        const bool isCurrentlyMeasuring = (processor->getCurrentStatus() == DynamicsStatus::Measuring);
+        const bool isAwaitingAudio = (processor->getCurrentStatus() == DynamicsStatus::AwaitingAudio);
+        const bool isEarFatigueWarning = processor->isEarFatigueWarningActive();
+        
+        if (isEarFatigueWarning)
         {
-            isFlashingStateOn = !isFlashingStateOn;
-            measuringFlashCounter = 0;
+            // Handle ear fatigue warning flashing
+            flashTimer += 1.0 / 30.0;
+            if (flashTimer >= FLASH_INTERVAL)
+            {
+                flashTimer = 0.0;
+                isFlashingStateOn = !isFlashingStateOn;
+                repaint();
+            }
         }
-    }
-    else
-    {
-        if (isFlashingStateOn)
+        else if (isCurrentlyMeasuring)
+        {
+            // Handle measuring state flashing
+            flashTimer += 1.0 / 30.0;
+            if (flashTimer >= FLASH_INTERVAL)
+            {
+                flashTimer = 0.0;
+                isFlashingStateOn = !isFlashingStateOn;
+                repaint();
+            }
+        }
+        else if (isAwaitingAudio)
+        {
+            // Handle awaiting audio state flashing
+            flashTimer += 1.0 / 30.0;
+            if (flashTimer >= FLASH_INTERVAL)
+            {
+                flashTimer = 0.0;
+                isFlashingStateOn = !isFlashingStateOn;
+                repaint();
+            }
+        }
+        else
         {
             isFlashingStateOn = false;
+            flashTimer = 0.0;
         }
-        measuringFlashCounter = 0;
     }
-
-    updateUIStatus();
 }
 
 //==============================================================================
 // Private Helper Function to Update UI Elements
 void DynamicsDoctorEditor::updateUIStatus()
 {
-    // Get current processor state
-    DynamicsStatus currentProcStatus = processorRef.getCurrentStatus();
-    const bool isBypassed = (currentProcStatus == DynamicsStatus::Bypassed);
-    const bool isCurrentlyMeasuring = (currentProcStatus == DynamicsStatus::Measuring);
+    auto* processor = dynamic_cast<DynamicsDoctorProcessor*>(getAudioProcessor());
+    if (processor == nullptr) return;
+
+    const bool isBypassed = processor->isCurrentlyBypassed();
+    const bool isCurrentlyMeasuring = (processor->getCurrentStatus() == DynamicsStatus::Measuring);
+    const bool isAwaitingAudio = (processor->getCurrentStatus() == DynamicsStatus::AwaitingAudio);
+    const bool isEarFatigueWarning = processor->isEarFatigueWarningActive();
 
     // Update status indicators
-    trafficLight.setStatus(currentProcStatus);
-    statusLabel.setText(getStatusMessage(currentProcStatus), juce::dontSendNotification);
-    statusLabel.setColour(juce::Label::textColourId, getStatusColour(currentProcStatus));
+    trafficLight.setStatus(processor->getCurrentStatus());
+    statusLabel.setText(getStatusMessage(processor->getCurrentStatus()), juce::dontSendNotification);
+    statusLabel.setColour(juce::Label::textColourId, getStatusColour(processor->getCurrentStatus()));
 
     // Handle bypassed state
     if (isBypassed)
@@ -242,6 +281,41 @@ void DynamicsDoctorEditor::updateUIStatus()
         resetLraButton.setEnabled(false);
         presetLabel.setColour(juce::Label::textColourId, Palette::DisabledText);
         lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.7f));
+    }
+    // Handle awaiting audio state
+    else if (isAwaitingAudio)
+    {
+        // Update peak measurement
+        if (auto* peakParamPtr = valueTreeState.getRawParameterValue(ParameterIDs::peak.getParamID()))
+        {
+            peakValueLabel.setText("Peak: " + juce::String(peakParamPtr->load(), 1) + " dBFS", 
+                                 juce::dontSendNotification);
+        }
+        else
+        {
+            peakValueLabel.setText("Peak: --- dBFS", juce::dontSendNotification);
+        }
+
+        // Update LRA display
+        lraValueLabel.setText("Loudness Range (LRA): Waiting for audio...", juce::dontSendNotification);
+        
+        // Handle flashing animation
+        if (isFlashingStateOn)
+        {
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Ok);
+            statusLabel.setColour(juce::Label::textColourId, Palette::Ok);
+        }
+        else
+        {
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground.withAlpha(0.5f));
+            statusLabel.setColour(juce::Label::textColourId, Palette::Ok.withAlpha(0.5f));
+        }
+
+        // Update preset information
+        updatePresetInfo();
+
+        // Enable all controls
+        enableControls(true);
     }
     // Handle measuring state
     else if (isCurrentlyMeasuring)
@@ -277,7 +351,35 @@ void DynamicsDoctorEditor::updateUIStatus()
         // Enable all controls
         enableControls(true);
     }
-    // Handle active state (Ok, Reduced, Loss)
+    // Handle ear fatigue warning state
+    else if (isEarFatigueWarning)
+    {
+        // Update measurements
+        updateMeasurements();
+        
+        // Set warning colors and text
+        if (isFlashingStateOn)
+        {
+            statusLabel.setColour(juce::Label::textColourId, Palette::Reduced);
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Reduced);
+            trafficLight.setStatus(DynamicsStatus::Loss); // Use Loss status for red warning
+        }
+        else
+        {
+            statusLabel.setColour(juce::Label::textColourId, Palette::Foreground);
+            lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground);
+            trafficLight.setStatus(DynamicsStatus::Loss); // Keep Loss status for red warning
+        }
+        
+        statusLabel.setText("Ear Fatigue Likely - Please take a break", juce::dontSendNotification);
+        
+        // Update preset information
+        updatePresetInfo();
+        
+        // Enable all controls
+        enableControls(true);
+    }
+    // Handle normal active state (Ok, Reduced, Loss)
     else
     {
         // Update measurements

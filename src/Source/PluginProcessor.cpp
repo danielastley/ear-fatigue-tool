@@ -123,9 +123,12 @@ void DynamicsDoctorProcessor::prepareToPlay (double newSampleRate, int samplesPe
     if (lraParam) lraParam->store(currentGlobalLRA.load());
 
     samplesProcessedSinceReset.store(0);
-    samplesUntilLraUpdate = 0; // Trigger first LRA calculation immediately
-    currentStatus.store(DynamicsStatus::Measuring);
-    DBG("prepareToPlay: currentStatus set to Measuring. samplesProcessedSinceReset = 0. LRA set to 0.");
+    samplesUntilLraUpdate = 0;
+    currentStatus.store(DynamicsStatus::AwaitingAudio);  // Start in awaiting audio state
+    waitingForNextAudio.store(true);
+    isInitialMeasuringPhase.store(true);
+    
+    DBG("prepareToPlay: currentStatus set to AwaitingAudio. Waiting for audio signal.");
 }
 
 void DynamicsDoctorProcessor::releaseResources()
@@ -192,18 +195,10 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // Handle transition from bypassed state
     if (currentStatus.load() == DynamicsStatus::Bypassed)
     {
-        DBG("PROCESSOR::processBlock - Transitioning FROM Bypassed state. Entering Measuring state.");
-        double rateForPrepare = (internalSampleRate > 0.0) ? internalSampleRate : 44100.0;
-        int chansForPrepare = (getTotalNumOutputChannels() > 0) ? getTotalNumOutputChannels() : 2;
-        int blockForPrepare = (getBlockSize() > 0) ? getBlockSize() : 512;
-        
-        loudnessMeter.prepare(rateForPrepare, chansForPrepare, blockForPrepare);
-        
-        currentGlobalLRA.store(0.0f);
-        if (lraParam) lraParam->store(0.0f);
-        samplesProcessedSinceReset.store(0);
-        samplesUntilLraUpdate = 0;
-        currentStatus.store(DynamicsStatus::Measuring);
+        currentStatus.store(DynamicsStatus::AwaitingAudio);
+        waitingForNextAudio.store(true);
+        isInitialMeasuringPhase.store(true);
+        DBG("PROCESSOR::processBlock - Transitioning FROM Bypassed state. Entering AwaitingAudio state.");
     }
     
     // Track peak level
@@ -217,10 +212,43 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // Process audio through loudness meter
     loudnessMeter.processBlock(buffer);
     
-    // Update measurement duration counter
-    if (currentStatus.load() == DynamicsStatus::Measuring && isAudioPresentInBlock)
+    // Handle state transitions based on audio presence
+    if (isAudioPresentInBlock)
     {
-        samplesProcessedSinceReset.fetch_add(buffer.getNumSamples());
+        // Reset timeout counter since we have audio
+        timeSinceLastAudio.store(0.0);
+        
+        // If we were in AwaitingAudio state, transition to Measuring
+        if (currentStatus.load() == DynamicsStatus::AwaitingAudio)
+        {
+            currentStatus.store(DynamicsStatus::Measuring);
+            samplesProcessedSinceReset.store(0);
+            waitingForNextAudio.store(false);
+            DBG("processBlock: Audio detected, entering Measuring state");
+        }
+        
+        // Update measurement duration counter if in Measuring state
+        if (currentStatus.load() == DynamicsStatus::Measuring)
+        {
+            samplesProcessedSinceReset.fetch_add(buffer.getNumSamples());
+        }
+    }
+    else
+    {
+        // No audio present, increment timeout counter
+        double currentTimeout = timeSinceLastAudio.load();
+        timeSinceLastAudio.store(currentTimeout + 1.0);
+        
+        // If timeout exceeded, enter awaiting audio state
+        if (currentTimeout + 1.0 >= AUDIO_TIMEOUT)
+        {
+            timeBelowThreshold.store(0.0);
+            totalMeasurementTime.store(0.0);
+            isEarFatigueWarning.store(false);
+            waitingForNextAudio.store(true);
+            currentStatus.store(DynamicsStatus::AwaitingAudio);
+            DBG("processBlock: No audio for 5 minutes, entering AwaitingAudio state");
+        }
     }
     
     // Handle periodic LRA updates
@@ -230,13 +258,10 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         double rate = (internalSampleRate > 0.0) ? internalSampleRate : 44100.0;
         samplesUntilLraUpdate += static_cast<int>(rate);
         
-        DBG("PROCESSOR::processBlock - LRA Update Triggered.");
-        
         // Get current LRA from meter
         float newLRA = loudnessMeter.getLoudnessRange();
         if (std::isinf(newLRA) || std::isnan(newLRA) || newLRA < 0)
         {
-            DBG("PROCESSOR::processBlock - Invalid LRA value. Clamping to 0.0f.");
             newLRA = 0.0f;
         }
         
@@ -246,30 +271,49 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             lraParam->store(newLRA);
         }
-        DBG("PROCESSOR::processBlock - Updated LRA: " << newLRA);
         
-        // Check if measurement period is complete
-        const int minSamplesForReliableLRA = static_cast<int>(rate * LRA_MEASURING_DURATION_SECONDS);
-        
+        // Handle state transitions based on measurement phase
         if (currentStatus.load() == DynamicsStatus::Measuring)
         {
-            DBG("PROCESSOR::processBlock - Measuring State. Samples: " << samplesProcessedSinceReset.load() 
-                << " / " << minSamplesForReliableLRA);
+            const int minSamplesForReliableLRA = static_cast<int>(rate * LRA_MEASURING_DURATION_SECONDS);
             
             if (samplesProcessedSinceReset.load() >= minSamplesForReliableLRA)
             {
-                DBG("PROCESSOR::processBlock - Measurement complete. Updating status based on LRA: " << newLRA);
+                isInitialMeasuringPhase.store(false);
                 updateStatusBasedOnLRA(newLRA);
-            }
-            else
-            {
-                DBG("PROCESSOR::processBlock - Still measuring. Current LRA: " << newLRA);
+                DBG("processBlock: Measurement complete, transitioning to active state");
             }
         }
-        else
+        else if (currentStatus.load() != DynamicsStatus::AwaitingAudio && 
+                 currentStatus.load() != DynamicsStatus::Bypassed)
         {
-            DBG("PROCESSOR::processBlock - Updating status with new LRA: " << newLRA);
+            // In active state, update status based on LRA
             updateStatusBasedOnLRA(newLRA);
+            
+            // Handle ear fatigue monitoring
+            if (!isInitialMeasuringPhase.load())
+            {
+                double currentTotalTime = totalMeasurementTime.load();
+                totalMeasurementTime.store(currentTotalTime + 1.0);
+                
+                if (newLRA < EAR_FATIGUE_THRESHOLD)
+                {
+                    double currentTime = timeBelowThreshold.load();
+                    timeBelowThreshold.store(currentTime + 1.0);
+                }
+                
+                double currentTimeBelow = timeBelowThreshold.load();
+                double currentTotal = totalMeasurementTime.load();
+                double percentageBelow = (currentTotal > 0.0) ? (currentTimeBelow / currentTotal) : 0.0;
+                
+                if (currentTotal >= EAR_FATIGUE_DURATION && 
+                    percentageBelow >= THRESHOLD_PERCENTAGE && 
+                    !isEarFatigueWarning.load())
+                {
+                    isEarFatigueWarning.store(true);
+                    DBG("PROCESSOR::processBlock - Ear fatigue warning triggered!");
+                }
+            }
         }
     }
 }
@@ -336,8 +380,17 @@ void DynamicsDoctorProcessor::handleResetLRA()
 
     samplesProcessedSinceReset.store(0);
     samplesUntilLraUpdate = 0;
-    currentStatus.store(DynamicsStatus::Measuring);
+    currentStatus.store(DynamicsStatus::AwaitingAudio);  // Set to awaiting audio state
     
+    // Reset ear fatigue monitoring
+    timeBelowThreshold.store(0.0);
+    totalMeasurementTime.store(0.0);
+    isEarFatigueWarning.store(false);
+    timeSinceLastAudio.store(0.0);
+    waitingForNextAudio.store(true);
+    isInitialMeasuringPhase.store(true);
+
+    DBG("handleResetLRA: currentStatus set to AwaitingAudio. Waiting for audio signal.");
     DBG("    PROCESSOR: handleResetLRA() - Reset complete.");
     DBG("    **********************************************************");
 }
@@ -434,8 +487,22 @@ juce::AudioProcessorValueTreeState& DynamicsDoctorProcessor::getValueTreeState()
 DynamicsStatus DynamicsDoctorProcessor::getCurrentStatus() const { return currentStatus.load(); }
 float DynamicsDoctorProcessor::getReportedLRA() const { return currentGlobalLRA.load(); }
 
+bool DynamicsDoctorProcessor::isCurrentlyBypassed() const
+{
+    return (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false;
+}
+
+bool DynamicsDoctorProcessor::isEarFatigueWarningActive() const
+{
+    return isEarFatigueWarning.load();
+}
+
 //==============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new DynamicsDoctorProcessor();
 }
+
+
+
+
