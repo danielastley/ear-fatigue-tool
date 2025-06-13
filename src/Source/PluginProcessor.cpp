@@ -7,10 +7,6 @@
 #include <limits>   // For std::numeric_limits
 
 //==============================================================================
-/** Minimum duration required for reliable LRA measurement in seconds */
-static const float LRA_MEASURING_DURATION_SECONDS = 12.0f;
-
-//==============================================================================
 DynamicsDoctorProcessor::DynamicsDoctorProcessor()
      : AudioProcessor (BusesProperties()
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -169,11 +165,14 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
     
-    // Check for audio activity in the block
+    // Check for audio activity in the block with a more reasonable threshold
     bool isAudioPresentInBlock = false;
+    const float AUDIO_THRESHOLD = -60.0f; // -60 dBFS threshold
     for (int ch = 0; ch < totalNumInputChannels; ++ch)
     {
-        if (buffer.getMagnitude(ch, 0, buffer.getNumSamples()) > 0.00001f)
+        float magnitude = buffer.getMagnitude(ch, 0, buffer.getNumSamples());
+        float dbMagnitude = juce::Decibels::gainToDecibels(magnitude, -std::numeric_limits<float>::infinity());
+        if (dbMagnitude > AUDIO_THRESHOLD)
         {
             isAudioPresentInBlock = true;
             break;
@@ -198,6 +197,7 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         currentStatus.store(DynamicsStatus::AwaitingAudio);
         waitingForNextAudio.store(true);
         isInitialMeasuringPhase.store(true);
+        timeSinceLastAudio.store(0.0);  // Reset the timeout counter
         DBG("PROCESSOR::processBlock - Transitioning FROM Bypassed state. Entering AwaitingAudio state.");
     }
     
@@ -211,6 +211,9 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     
     // Process audio through loudness meter
     loudnessMeter.processBlock(buffer);
+    
+    // Calculate time increment based on block size and sample rate
+    double blockDuration = buffer.getNumSamples() / (internalSampleRate > 0.0 ? internalSampleRate : 44100.0);
     
     // Handle state transitions based on audio presence
     if (isAudioPresentInBlock)
@@ -235,19 +238,30 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
     else
     {
-        // No audio present, increment timeout counter
-        double currentTimeout = timeSinceLastAudio.load();
-        timeSinceLastAudio.store(currentTimeout + 1.0);
-        
-        // If timeout exceeded, enter awaiting audio state
-        if (currentTimeout + 1.0 >= AUDIO_TIMEOUT)
+        // If we're in Measuring state and audio stops, return to AwaitingAudio
+        if (currentStatus.load() == DynamicsStatus::Measuring)
         {
-            timeBelowThreshold.store(0.0);
-            totalMeasurementTime.store(0.0);
-            isEarFatigueWarning.store(false);
-            waitingForNextAudio.store(true);
             currentStatus.store(DynamicsStatus::AwaitingAudio);
-            DBG("processBlock: No audio for 5 minutes, entering AwaitingAudio state");
+            waitingForNextAudio.store(true);
+            DBG("processBlock: Audio stopped during measuring, returning to AwaitingAudio state");
+        }
+        // If we're in active state (Ok, Reduced, Loss), stay there and just increment timeout
+        else if (currentStatus.load() != DynamicsStatus::AwaitingAudio && 
+                 currentStatus.load() != DynamicsStatus::Bypassed)
+        {
+            double currentTimeout = timeSinceLastAudio.load();
+            timeSinceLastAudio.store(currentTimeout + blockDuration);
+            
+            // Only transition to AwaitingAudio after 5 minutes of no audio
+            if (currentTimeout + blockDuration >= AUDIO_TIMEOUT)
+            {
+                timeBelowThreshold.store(0.0);
+                totalMeasurementTime.store(0.0);
+                isEarFatigueWarning.store(false);
+                waitingForNextAudio.store(true);
+                currentStatus.store(DynamicsStatus::AwaitingAudio);
+                DBG("processBlock: No audio for 5 minutes, entering AwaitingAudio state");
+            }
         }
     }
     

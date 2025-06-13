@@ -112,8 +112,9 @@ private:
     std::atomic<bool> waitingForNextAudio { false };             // Flag to indicate we're waiting for next audio signal
     std::atomic<bool> isInitialMeasuringPhase { true };  // Flag to track initial measuring phase
     static constexpr double EAR_FATIGUE_THRESHOLD = 3.5;         // LU threshold for warning
-    static constexpr double EAR_FATIGUE_DURATION = 20.0;         // 20 seconds (for testing)
-    static constexpr double AUDIO_TIMEOUT = 300.0;               // 5 minutes in seconds
+    static constexpr double LRA_MEASURING_DURATION_SECONDS = 15.0;    // Duration for LRA measurement (15 seconds)
+    static constexpr double AUDIO_TIMEOUT = 30.0;                    // 30 seconds for testing
+    static constexpr double EAR_FATIGUE_DURATION = 30.0;            // 5 minutes in seconds
     static constexpr double THRESHOLD_PERCENTAGE = 0.8;          // 80% threshold for warning
     
     /** Internal processing methods */
