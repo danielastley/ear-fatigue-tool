@@ -255,9 +255,6 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             // Only transition to AwaitingAudio after 5 minutes of no audio
             if (currentTimeout + blockDuration >= AUDIO_TIMEOUT)
             {
-                timeBelowThreshold.store(0.0);
-                totalMeasurementTime.store(0.0);
-                isEarFatigueWarning.store(false);
                 waitingForNextAudio.store(true);
                 currentStatus.store(DynamicsStatus::AwaitingAudio);
                 DBG("processBlock: No audio for 5 minutes, entering AwaitingAudio state");
@@ -303,31 +300,6 @@ void DynamicsDoctorProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             // In active state, update status based on LRA
             updateStatusBasedOnLRA(newLRA);
-            
-            // Handle ear fatigue monitoring
-            if (!isInitialMeasuringPhase.load())
-            {
-                double currentTotalTime = totalMeasurementTime.load();
-                totalMeasurementTime.store(currentTotalTime + 1.0);
-                
-                if (newLRA < EAR_FATIGUE_THRESHOLD)
-                {
-                    double currentTime = timeBelowThreshold.load();
-                    timeBelowThreshold.store(currentTime + 1.0);
-                }
-                
-                double currentTimeBelow = timeBelowThreshold.load();
-                double currentTotal = totalMeasurementTime.load();
-                double percentageBelow = (currentTotal > 0.0) ? (currentTimeBelow / currentTotal) : 0.0;
-                
-                if (currentTotal >= EAR_FATIGUE_DURATION && 
-                    percentageBelow >= THRESHOLD_PERCENTAGE && 
-                    !isEarFatigueWarning.load())
-                {
-                    isEarFatigueWarning.store(true);
-                    DBG("PROCESSOR::processBlock - Ear fatigue warning triggered!");
-                }
-            }
         }
     }
 }
@@ -396,10 +368,7 @@ void DynamicsDoctorProcessor::handleResetLRA()
     samplesUntilLraUpdate = 0;
     currentStatus.store(DynamicsStatus::AwaitingAudio);  // Set to awaiting audio state
     
-    // Reset ear fatigue monitoring
-    timeBelowThreshold.store(0.0);
-    totalMeasurementTime.store(0.0);
-    isEarFatigueWarning.store(false);
+    // Reset audio state monitoring
     timeSinceLastAudio.store(0.0);
     waitingForNextAudio.store(true);
     isInitialMeasuringPhase.store(true);
@@ -504,11 +473,6 @@ float DynamicsDoctorProcessor::getReportedLRA() const { return currentGlobalLRA.
 bool DynamicsDoctorProcessor::isCurrentlyBypassed() const
 {
     return (bypassParam != nullptr) ? (bypassParam->load() > 0.5f) : false;
-}
-
-bool DynamicsDoctorProcessor::isEarFatigueWarningActive() const
-{
-    return isEarFatigueWarning.load();
 }
 
 //==============================================================================

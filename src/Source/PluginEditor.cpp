@@ -98,15 +98,7 @@ DynamicsDoctorEditor::~DynamicsDoctorEditor()
 void DynamicsDoctorEditor::paint (juce::Graphics& g)
 {
     // Draw background
-    if (isFlashingStateOn && processorRef.isEarFatigueWarningActive())
-    {
-        // Flash solid red background during warning
-        g.fillAll(Palette::Loss); // Use solid red instead of orange
-    }
-    else
-    {
-        g.fillAll(Palette::Background);
-    }
+    g.fillAll(Palette::Background);
 
     // Draw UI sections
     auto bounds = getLocalBounds();
@@ -207,33 +199,10 @@ void DynamicsDoctorEditor::timerCallback()
     {
         const bool isCurrentlyMeasuring = (processor->getCurrentStatus() == DynamicsStatus::Measuring);
         const bool isAwaitingAudio = (processor->getCurrentStatus() == DynamicsStatus::AwaitingAudio);
-        const bool isEarFatigueWarning = processor->isEarFatigueWarningActive();
         
-        if (isEarFatigueWarning)
+        if (isCurrentlyMeasuring || isAwaitingAudio)
         {
-            // Handle ear fatigue warning flashing
-            flashTimer += 1.0 / 30.0;
-            if (flashTimer >= FLASH_INTERVAL)
-            {
-                flashTimer = 0.0;
-                isFlashingStateOn = !isFlashingStateOn;
-                repaint();
-            }
-        }
-        else if (isCurrentlyMeasuring)
-        {
-            // Handle measuring state flashing
-            flashTimer += 1.0 / 30.0;
-            if (flashTimer >= FLASH_INTERVAL)
-            {
-                flashTimer = 0.0;
-                isFlashingStateOn = !isFlashingStateOn;
-                repaint();
-            }
-        }
-        else if (isAwaitingAudio)
-        {
-            // Handle awaiting audio state flashing
+            // Handle measuring or awaiting audio state flashing
             flashTimer += 1.0 / 30.0;
             if (flashTimer >= FLASH_INTERVAL)
             {
@@ -260,7 +229,6 @@ void DynamicsDoctorEditor::updateUIStatus()
     const bool isBypassed = processor->isCurrentlyBypassed();
     const bool isCurrentlyMeasuring = (processor->getCurrentStatus() == DynamicsStatus::Measuring);
     const bool isAwaitingAudio = (processor->getCurrentStatus() == DynamicsStatus::AwaitingAudio);
-    const bool isEarFatigueWarning = processor->isEarFatigueWarningActive();
 
     // Update status indicators
     trafficLight.setStatus(processor->getCurrentStatus());
@@ -348,34 +316,6 @@ void DynamicsDoctorEditor::updateUIStatus()
         // Update preset information
         updatePresetInfo();
 
-        // Enable all controls
-        enableControls(true);
-    }
-    // Handle ear fatigue warning state
-    else if (isEarFatigueWarning)
-    {
-        // Update measurements
-        updateMeasurements();
-        
-        // Set warning colors and text
-        if (isFlashingStateOn)
-        {
-            statusLabel.setColour(juce::Label::textColourId, Palette::Reduced);
-            lraValueLabel.setColour(juce::Label::textColourId, Palette::Reduced);
-            trafficLight.setStatus(DynamicsStatus::Loss); // Use Loss status for red warning
-        }
-        else
-        {
-            statusLabel.setColour(juce::Label::textColourId, Palette::Foreground);
-            lraValueLabel.setColour(juce::Label::textColourId, Palette::Foreground);
-            trafficLight.setStatus(DynamicsStatus::Loss); // Keep Loss status for red warning
-        }
-        
-        statusLabel.setText("Ear Fatigue Likely - Please take a break", juce::dontSendNotification);
-        
-        // Update preset information
-        updatePresetInfo();
-        
         // Enable all controls
         enableControls(true);
     }

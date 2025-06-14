@@ -97,7 +97,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> resetLraButtonAttachment;
    
-    /** Warning state */
+    /** UI animation state */
     bool isFlashingStateOn { false };
     double flashTimer { 0.0 };
     static constexpr double FLASH_INTERVAL = 0.5; // Half second flash interval
